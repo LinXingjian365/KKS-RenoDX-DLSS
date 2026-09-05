@@ -60,6 +60,16 @@ namespace PPE_DLSS
             uint InSDKVersion,
             IntPtr InParameters);
 
+        [DllImport(NGX_DLL, EntryPoint = "NVSDK_NGX_D3D11_Init_with_ProjectID", CallingConvention = CallingConvention.Cdecl)]
+        public static extern NVSDK_NGX_Result D3D11_Init_with_ProjectID(
+            [MarshalAs(UnmanagedType.LPStr)] string projectId,
+            int engineType,
+            [MarshalAs(UnmanagedType.LPStr)] string engineVersion,
+            [MarshalAs(UnmanagedType.LPWStr)] string dataPath,
+            IntPtr device,
+            IntPtr featureInfo,
+            uint sdkVersion);
+
         [DllImport(NGX_DLL, EntryPoint = "NVSDK_NGX_D3D11_Shutdown", CallingConvention = CallingConvention.Cdecl)]
         public static extern NVSDK_NGX_Result D3D11_Shutdown();
 
@@ -84,6 +94,14 @@ namespace PPE_DLSS
 
         [DllImport(NGX_DLL, EntryPoint = "NVSDK_NGX_D3D11_EvaluateFeature", CallingConvention = CallingConvention.Cdecl)]
         public static extern NVSDK_NGX_Result D3D11_EvaluateFeature(
+            IntPtr InDevCtx,
+            IntPtr InFeatureHandle,
+            IntPtr InParameters,
+            IntPtr InCallback);
+
+        // DLSS's D3D11 helper path binds typed ID3D11Resource inputs before calling this entry point.
+        [DllImport(NGX_DLL, EntryPoint = "NVSDK_NGX_D3D11_EvaluateFeature_C", CallingConvention = CallingConvention.Cdecl)]
+        public static extern NVSDK_NGX_Result D3D11_EvaluateFeature_C(
             IntPtr InDevCtx,
             IntPtr InFeatureHandle,
             IntPtr InParameters,
@@ -120,6 +138,7 @@ namespace PPE_DLSS
     public class NGXParameter : IDisposable
     {
         public IntPtr Ptr { get; private set; }
+        private readonly bool _ownsParameters;
         private IntPtr _vtable;
         private bool _disposed;
 
@@ -129,6 +148,7 @@ namespace PPE_DLSS
         private delegate void SetUIDelegate(IntPtr self, IntPtr name, uint value);
         private delegate void SetIDelegate(IntPtr self, IntPtr name, int value);
         private delegate void SetPtrDelegate(IntPtr self, IntPtr name, IntPtr value);
+        private delegate void SetD3D11ResourceDelegate(IntPtr self, IntPtr name, IntPtr value);
         private delegate void ResetDelegate(IntPtr self);
 
         private SetULLDelegate _setULL;
@@ -136,11 +156,13 @@ namespace PPE_DLSS
         private SetUIDelegate _setUI;
         private SetIDelegate _setI;
         private SetPtrDelegate _setPtr;
+        private SetD3D11ResourceDelegate _setD3D11Resource;
         private ResetDelegate _reset;
 
-        public NGXParameter(IntPtr ptr)
+        public NGXParameter(IntPtr ptr, bool ownsParameters = true)
         {
             Ptr = ptr;
+            _ownsParameters = ownsParameters;
             if (ptr != IntPtr.Zero)
             {
                 _vtable = Marshal.ReadIntPtr(ptr, 0);
@@ -151,11 +173,12 @@ namespace PPE_DLSS
         private void InitDelegates()
         {
             int ptrSize = IntPtr.Size;
-            // vtable indices: 0=SetULL, 1=SetF, 2=SetD, 3=SetUI, 4=SetI, 5=SetD3D11, 6=SetD3D12, 7=SetVoid, 16=Reset
+            // vtable indices from NVSDK_NGX_Parameter: 0=ULL, 1=F, 3=UI, 4=I, 5=D3D11 resource, 7=void pointer.
             _setULL = Marshal.GetDelegateForFunctionPointer<SetULLDelegate>(Marshal.ReadIntPtr(_vtable, 0 * ptrSize));
             _setF = Marshal.GetDelegateForFunctionPointer<SetFDelegate>(Marshal.ReadIntPtr(_vtable, 1 * ptrSize));
             _setUI = Marshal.GetDelegateForFunctionPointer<SetUIDelegate>(Marshal.ReadIntPtr(_vtable, 3 * ptrSize));
             _setI = Marshal.GetDelegateForFunctionPointer<SetIDelegate>(Marshal.ReadIntPtr(_vtable, 4 * ptrSize));
+            _setD3D11Resource = Marshal.GetDelegateForFunctionPointer<SetD3D11ResourceDelegate>(Marshal.ReadIntPtr(_vtable, 5 * ptrSize));
             _setPtr = Marshal.GetDelegateForFunctionPointer<SetPtrDelegate>(Marshal.ReadIntPtr(_vtable, 7 * ptrSize));
             _reset = Marshal.GetDelegateForFunctionPointer<ResetDelegate>(Marshal.ReadIntPtr(_vtable, 16 * ptrSize));
         }
@@ -195,6 +218,13 @@ namespace PPE_DLSS
             finally { Marshal.FreeHGlobal(namePtr); }
         }
 
+        public void SetD3D11Resource(string name, IntPtr value)
+        {
+            IntPtr namePtr = Marshal.StringToHGlobalAnsi(name);
+            try { _setD3D11Resource(Ptr, namePtr, value); }
+            finally { Marshal.FreeHGlobal(namePtr); }
+        }
+
         public void Reset()
         {
             if (_reset != null) _reset(Ptr);
@@ -202,7 +232,7 @@ namespace PPE_DLSS
 
         public void Dispose()
         {
-            if (!_disposed && Ptr != IntPtr.Zero)
+            if (!_disposed && Ptr != IntPtr.Zero && _ownsParameters)
             {
                 DLSSNative.D3D11_DestroyParameters(Ptr);
                 Ptr = IntPtr.Zero;

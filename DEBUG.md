@@ -80,6 +80,12 @@ Anti-aliasing multiplier = Disabled
 
 After restart, the Feeder still reported `feature ready ... DLSS Quality`, `DLSS SR`, and non-zero motion vectors, while the depth probe remained flat. This isolates the current depth failure from MSAA. The files were backed up under `D:\Koikatsu Sunshine\_codex_archive\DLSS\msaa_off_20260905_164527`.
 
+### Native D3D11 isolation result
+
+The native test was run with Feeder/RenoDX add-ons removed from the active directory and the native toggle enabled. KKS reached `BackCamera` and reported valid D3D11 device/context pointers. NGX initialization then returned `PlatformError` for all tested application IDs and paths. The official custom ProjectID fallback was also attempted, but the installed runtime did not export `NVSDK_NGX_D3D11_Init_with_ProjectID`.
+
+This is why the native route cannot be declared complete yet. The D3D11 KKS device is valid, but this runtime combination does not accept the in-process D3D11 NGX initialization. The primary route must therefore move the NGX session to a private D3D12 device and bridge Unity's resources, which is the same architectural class as the already-working Feeder but implemented inside the native project.
+
 ### Why the current native `PPE_DLSS.dll` is not yet a native-input implementation
 
 The repository's experimental source was useful for proving the failure mode, but it is not ready for release as a native solution:

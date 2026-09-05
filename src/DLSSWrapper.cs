@@ -42,6 +42,10 @@ namespace PPE_DLSS
 
         public bool IsInitialized => _initialized;
 
+        private static void NativeLog(string message) => PPE_DLSS_Plugin.Log?.LogInfo("[Native] " + message);
+        private static void NativeWarn(string message) => PPE_DLSS_Plugin.Log?.LogWarning("[Native] " + message);
+        private static void NativeError(string message) => PPE_DLSS_Plugin.Log?.LogError("[Native] " + message);
+
         public DLSSWrapper()
         {
         }
@@ -63,6 +67,7 @@ namespace PPE_DLSS
                 _d3dDevice = GetD3D11Device();
                 if (_d3dDevice == IntPtr.Zero)
                 {
+                    NativeError("GetD3D11Device returned null");
                     Debug.LogError("[DLSS] Failed to get D3D11 device");
                     return false;
                 }
@@ -70,6 +75,7 @@ namespace PPE_DLSS
 
                 // Get immediate context
                 _d3dContext = GetImmediateContext(_d3dDevice);
+                NativeLog($"D3D11 device=0x{_d3dDevice.ToInt64():X}, context=0x{_d3dContext.ToInt64():X}");
                 Debug.Log($"[DLSS] Got D3D11 context: 0x{_d3dContext.ToInt64():X}");
 
                 // Step 2: Verify DLL works
@@ -118,6 +124,36 @@ namespace PPE_DLSS
                     if (dev == IntPtr.Zero) continue;
                     string devName = (dev == _d3dDevice) ? "Unity" : "Standalone";
                     Debug.Log($"[DLSS] Trying device: {devName} (0x{dev.ToInt64():X})");
+
+                    // KKS has no NVIDIA-issued application ID. The public NGX API
+                    // supports a GUID-like project identifier for custom engines.
+                    foreach (var dp in dataPaths)
+                    {
+                        try
+                        {
+                            initResult = DLSSNative.D3D11_Init_with_ProjectID(
+                                "6a9c4c0d-6f1c-4c4d-9a70-6f2d0f4f2c19",
+                                0, // NVSDK_NGX_ENGINE_TYPE_CUSTOM
+                                "Unity 2019.4.9f1 KKS CharaStudio",
+                                dp,
+                                dev,
+                                IntPtr.Zero,
+                                0x00000015);
+                            if (initResult == DLSSNative.NVSDK_NGX_Result.Success || initResult == DLSSNative.NVSDK_NGX_Result.AlreadyInitialized)
+                            {
+                                NativeLog($"ProjectID NGX init succeeded on {devName}, path={(dp ?? "null")}");
+                                initOk = true;
+                                _d3dDevice = dev;
+                                if (dev == standaloneDevice) _d3dContext = standaloneContext;
+                                break;
+                            }
+                        }
+                        catch (Exception e)
+                        {
+                            NativeWarn($"ProjectID init exception on {devName}: {e.Message}");
+                        }
+                    }
+                    if (initOk) break;
                     
                     foreach (var aid in appIds)
                     {
@@ -152,6 +188,7 @@ namespace PPE_DLSS
                 
                 if (!initOk)
                 {
+                    NativeError($"All NGX D3D11 init attempts failed; last result={initResult}");
                     Debug.LogError($"[DLSS] All init attempts failed, last result: {initResult}");
                     return false;
                 }
@@ -162,11 +199,12 @@ namespace PPE_DLSS
                 Debug.Log($"[DLSS] GetParameters result: {getParamsResult}, ptr=0x{_parameters.ToInt64():X}");
                 if (getParamsResult != DLSSNative.NVSDK_NGX_Result.Success || _parameters == IntPtr.Zero)
                 {
+                    NativeError($"D3D11_GetParameters failed: {getParamsResult}, ptr=0x{_parameters.ToInt64():X}");
                     Debug.LogError("[DLSS] GetParameters failed");
                     return false;
                 }
 
-                using (var param = new NGXParameter(_parameters))
+                using (var param = new NGXParameter(_parameters, ownsParameters: false))
                 {
                     // Step 4: Set basic dimensions
                     param.Set("Width", (uint)renderWidth);
@@ -198,15 +236,15 @@ namespace PPE_DLSS
                     CreateTextures();
 
                     // Set texture resources
-                    param.Set("Color", GetNativeTexturePtr(_colorRT));
-                    param.Set("Depth", GetNativeTexturePtr(_depthRT));
-                    param.Set("MotionVectors", GetNativeTexturePtr(_mvRT));
-                    param.Set("Output", GetNativeTexturePtr(_outputRT));
+                    param.SetD3D11Resource("Color", GetNativeTexturePtr(_colorRT));
+                    param.SetD3D11Resource("Depth", GetNativeTexturePtr(_depthRT));
+                    param.SetD3D11Resource("MotionVectors", GetNativeTexturePtr(_mvRT));
+                    param.SetD3D11Resource("Output", GetNativeTexturePtr(_outputRT));
                     Debug.Log("[DLSS] Set texture resources");
 
                     // Step 8: Set DLSS creation params
-                    param.Set("PerfQualityValue", (uint)2); // 0=maxPerf,1=balanced,2=quality,3=maxQuality
-                    param.Set("DLSS.Feature.Create.Flags", (uint)1); // 1=HDR
+                    param.Set("PerfQualityValue", 2); // 0=maxPerf,1=balanced,2=quality,3=maxQuality
+                    param.Set("DLSS.Feature.Create.Flags", 1); // HDR; guide flags are added as inputs are validated
                     param.Set("MV.Scale.X", 1.0f);
                     param.Set("MV.Scale.Y", 1.0f);
                     param.Set("Reset", (uint)1);
@@ -222,6 +260,7 @@ namespace PPE_DLSS
                 Debug.Log($"[DLSS] CreateFeature result: {createResult}, handle=0x{_featureHandle.ToInt64():X}");
                 if (createResult != DLSSNative.NVSDK_NGX_Result.Success || _featureHandle == IntPtr.Zero)
                 {
+                    NativeError($"D3D11_CreateFeature failed: {createResult}, handle=0x{_featureHandle.ToInt64():X}");
                     Debug.LogError($"[DLSS] CreateFeature failed: {createResult}");
                     return false;
                 }
@@ -232,6 +271,7 @@ namespace PPE_DLSS
             }
             catch (Exception e)
             {
+                NativeError($"Init exception: {e.Message}");
                 Debug.LogError($"[DLSS] Init exception: {e.Message}\n{e.StackTrace}");
                 return false;
             }
@@ -243,16 +283,19 @@ namespace PPE_DLSS
 
             try
             {
-                using (var param = new NGXParameter(_parameters))
+                using (var param = new NGXParameter(_parameters, ownsParameters: false))
                 {
                     // Bind Unity's live camera resources at evaluate time. The previous
                     // proof-of-concept passed an empty depth RT and a zeroed MV RT.
                     IntPtr depthPtr = sceneDepth != null ? sceneDepth.GetNativeTexturePtr() : IntPtr.Zero;
                     IntPtr motionPtr = sceneMotionVectors != null ? sceneMotionVectors.GetNativeTexturePtr() : IntPtr.Zero;
                     if (depthPtr != IntPtr.Zero)
-                        param.Set("Depth", depthPtr);
+                        param.SetD3D11Resource("Depth", depthPtr);
                     if (motionPtr != IntPtr.Zero)
-                        param.Set("MotionVectors", motionPtr);
+                        param.SetD3D11Resource("MotionVectors", motionPtr);
+
+                    param.SetD3D11Resource("Color", _colorRT.GetNativeTexturePtr());
+                    param.SetD3D11Resource("Output", _outputRT.GetNativeTexturePtr());
 
                     param.Set("FrameTimeDeltaInMsec", frameTimeMs);
                     param.Set("Reset", (uint)0);
@@ -260,7 +303,7 @@ namespace PPE_DLSS
                     param.Set("Jitter.Offset.Y", 0.0f);
                 }
 
-                var result = DLSSNative.D3D11_EvaluateFeature(
+                var result = DLSSNative.D3D11_EvaluateFeature_C(
                     _d3dContext, _featureHandle, _parameters, IntPtr.Zero);
 
                 if (result != DLSSNative.NVSDK_NGX_Result.Success)

@@ -18,6 +18,13 @@
 - Built and deployed the experiment with the native toggle left off; the Feeder route remains the active verified route.
 - Kept the native output/synchronization path explicitly experimental until live KKS captures validate it.
 
+## v2.4.6
+
+- Added official D3D11 typed-resource binding and `EvaluateFeature_C` usage to the native experiment.
+- Added live Unity depth/motion-vector resource capture and a custom ProjectID initialization attempt.
+- Recorded the isolated result: KKS exposes a valid D3D11 device, but the current NGX runtime returns `PlatformError` and lacks the ProjectID export.
+- Defined the next native milestone as a private D3D12 bridge; restored RenoDX/Feeder as the active fallback after testing.
+
 ## v2.4.2
 
 - Marked the Feeder route as theoretically complete and runtime-verified for DLSS Super Resolution.
