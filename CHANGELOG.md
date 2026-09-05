@@ -1,5 +1,9 @@
 # Changelog
 
+## Repository rename
+
+The project is now published as **KKS-RenoDX-DLSS5-Bridge** so the name matches the real implementation route: ReShade add-ons, RenoDX DLSS 5, and the DX11 synthetic-contract bridge. It is not a native KKS DLSS implementation.
+
 ## v2.2.1
 
 - Added the RenoDX DX11/no-native-DLSS values `HookPoint=5`, `ForceNgxCore=1`, and `RequireDlss=0`.

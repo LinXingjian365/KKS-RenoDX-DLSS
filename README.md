@@ -1,6 +1,6 @@
-# KKS DLSS / RenoDX integration notes
+# KKS RenoDX DLSS 5 Bridge
 
-Koikatsu Sunshine CharaStudio (Unity 2019.4, D3D11) integration notes and the legacy native NGX experiment.
+RenoDX DLSS 5 + ReShade DX11 bridge integration for Koikatsu Sunshine CharaStudio (Unity 2019.4). The repository also archives the legacy native NGX experiment for comparison.
 
 ## Recommended route: RenoDX DLSS 5 bridge
 
