@@ -7,6 +7,7 @@
 - Added `DLSS5-FEEDER.md` with the exact file layout, settings, verification markers, and conflict rules.
 - Documented the distinction between DLSSNR neural rendering and DLSS Super Resolution.
 - Documented the remaining Generic Depth selection requirement instead of treating flat depth as a successful quality result.
+- Added the measured verification record in `VERIFICATION-20260905.md`.
 
 ## Repository rename
 

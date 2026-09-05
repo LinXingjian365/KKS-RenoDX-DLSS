@@ -45,9 +45,9 @@ PreprocessorDefinitions=DLSS5_MV_PROVIDER=3,RESHADE_DEPTH_LINEARIZATION_FAR_PLAN
 [DEPTH]
 DepthCopyAtClearIndex=1
 DepthCopyBeforeClears=2
-DrawStatsHeuristic=0
+DrawStatsHeuristic=2
 FilterFormat=0
-UseAspectRatioHeuristics=3
+UseAspectRatioHeuristics=0
 ```
 
 `ReShadePreset.ini` must enable the effects in this order:
@@ -81,7 +81,7 @@ MV probe ... non-zero
 Depth probe ... non-flat
 ```
 
-The current KKS run passes the first four and motion-vector probe. Its remaining issue is a flat depth probe, which means ReShade Generic Depth is selecting a cleared/UI buffer. Open ReShade's **Add-ons -> Generic Depth**, use its preview/statistics, and select the draw call or clear that contains the 3D scene. The correct result is a non-flat depth image; changing DLSS or RenoDX settings cannot repair a wrong depth source.
+The current KKS run passes the first four and motion-vector probe. Its remaining issue is a flat depth probe, which means ReShade Generic Depth is selecting a cleared/UI buffer. Open ReShade's **Add-ons -> Generic Depth**, use its preview/statistics, and select the draw call or clear that contains the 3D scene. The correct result is a non-flat depth image; changing DLSS or RenoDX settings cannot repair a wrong depth source. The automatic fallback in the checked-in profile is `UseAspectRatioHeuristics=0` plus `DrawStatsHeuristic=2`; it still cannot replace the one-time manual selection when KKS changes the candidate buffer after Studio loads.
 
 ## Do not combine these routes
 
