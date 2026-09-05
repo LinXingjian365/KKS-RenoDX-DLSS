@@ -8,6 +8,10 @@ KKS has no native DLSS feature contract. The working route is:
 
 `ReShade 6.8 add-on support -> LumeniteFX Kernel -> DLSS5-Feeder -> RenoDX DLSS5 -> NVIDIA NGX SuperSampling`
 
+## Release status
+
+The DLSS contract and Super Resolution path are verified. The remaining per-machine step is selecting KKS's live scene depth resource in ReShade Generic Depth. This cannot be reliably hard-coded because the resource handle is created and destroyed by the running D3D11 device; the repository ships the best automatic heuristics and documents the one-time runtime selection.
+
 This is the route that actually produced the following runtime proof on an RTX 3060 Laptop with driver 616.56:
 
 ```text

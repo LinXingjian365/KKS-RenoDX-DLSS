@@ -1,5 +1,11 @@
 # Changelog
 
+## v2.4.2
+
+- Marked the Feeder route as theoretically complete and runtime-verified for DLSS Super Resolution.
+- Clarified that only the live Generic Depth resource selection remains machine/runtime-specific.
+- Kept the automatic depth heuristics as the safe default and documented why the resource handle is not hard-coded.
+
 ## v2.4.0
 
 - Switched the documented and tested route to DLSS5-Feeder plus LumeniteFX Kernel and RenoDX DLSS5.

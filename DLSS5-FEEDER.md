@@ -83,6 +83,8 @@ Depth probe ... non-flat
 
 The current KKS run passes the first four and motion-vector probe. Its remaining issue is a flat depth probe, which means ReShade Generic Depth is selecting a cleared/UI buffer. Open ReShade's **Add-ons -> Generic Depth**, use its preview/statistics, and select the draw call or clear that contains the 3D scene. The correct result is a non-flat depth image; changing DLSS or RenoDX settings cannot repair a wrong depth source. The automatic fallback in the checked-in profile is `UseAspectRatioHeuristics=0` plus `DrawStatsHeuristic=2`; it still cannot replace the one-time manual selection when KKS changes the candidate buffer after Studio loads.
 
+Once the preview shows the room geometry, no code or DLL change is required: keep the selected resource, close the overlay, and let the feeder rebuild its contract. The expected end state is both `DLSS SR` and a non-flat `Depth probe` in the same log.
+
 ## Do not combine these routes
 
 - Do not load ShortFuse `renodx-dlss.addon64` with the Feeder.
