@@ -1,4 +1,4 @@
-# RenoDX DLSS on KKS
+# ShortFuse RenoDX DLSS on KKS (legacy route)
 
 ## Verified environment
 
@@ -12,7 +12,7 @@
 
 KKS is a Unity 2019 D3D11 game with no native DLSS feature creation. The ShortFuse add-on loads and hooks the D3D11 Present path and creates a D3D12 proxy, which is the correct RenoDX integration point. That is not the same as a working DLSS Super Resolution pass: a real `CreateFeature`/`EvaluateFeature` pair is still required.
 
-The old generic `renodx-dlss5` plus `dlss5-bridge` stack is archived and must not be loaded beside ShortFuse's add-on. If a synthetic no-DLSS contract is desired, use a dedicated Feeder route; it is a different pipeline and must not be mixed with this add-on.
+This route is retained for comparison and rollback only. The current working route is documented in [DLSS5-FEEDER.md](DLSS5-FEEDER.md): DLSS5-Feeder creates the missing contract, then RenoDX DLSS5 consumes it. The old generic `renodx-dlss5` plus `dlss5-bridge` stack is archived and must not be loaded beside ShortFuse's add-on or the Feeder.
 
 ## Required layout
 
@@ -59,7 +59,7 @@ Do not judge success from the Home overlay switch alone. `ReShade.log` must cont
 - `first present`
 - a real DLSS `CreateFeature` and `EvaluateFeature` pair
 
-The current KKS test reaches the first three integration markers. It does not yet produce a native DLSS feature because KKS never creates one.
+The current KKS test of this legacy route reaches the first three integration markers. It does not produce a native DLSS feature because KKS never creates one. Do not use this criterion to evaluate the current Feeder route; use the `DLSS SR` proof markers in [DLSS5-FEEDER.md](DLSS5-FEEDER.md).
 
 ### `feature 18 create failed with 0xBAD00002`
 
