@@ -1,5 +1,11 @@
 # Changelog
 
+## v2.2.1
+
+- Added the RenoDX DX11/no-native-DLSS values `HookPoint=5`, `ForceNgxCore=1`, and `RequireDlss=0`.
+- Documented the difference between a functioning DLSS 5 Bridge contract and actual Neural Rendering activation.
+- Documented the known `nvngx_dlssnr.dll` `HashMismatch` failure and signed-runtime verification procedure.
+
 ## v2.2.0
 
 - Documented and verified the RenoDX DLSS 5 + DX11 bridge route for KKS.
