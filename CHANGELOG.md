@@ -12,6 +12,12 @@
 - Audited the native `PPE_DLSS` source and documented why its zeroed motion vectors and empty depth texture are not valid native inputs.
 - Added the concrete native-input bridge milestones instead of presenting the proof-of-concept wrapper as complete.
 
+## v2.4.5
+
+- Added the first native-input experiment: bind Unity `_CameraDepthTexture` and `_CameraMotionVectorsTexture` resources to NGX at evaluate time.
+- Built and deployed the experiment with the native toggle left off; the Feeder route remains the active verified route.
+- Kept the native output/synchronization path explicitly experimental until live KKS captures validate it.
+
 ## v2.4.2
 
 - Marked the Feeder route as theoretically complete and runtime-verified for DLSS Super Resolution.

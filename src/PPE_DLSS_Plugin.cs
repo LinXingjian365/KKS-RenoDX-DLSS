@@ -232,8 +232,18 @@ namespace PPE_DLSS
                     Graphics.Blit(source, colorRT);
                 }
 
-                // Execute DLSS
-                bool success = _dlss.Evaluate(frameTime);
+                // Unity exposes these camera resources after depthTextureMode is enabled.
+                // They are the only native scene guides available without a ReShade bridge.
+                Texture sceneDepth = Shader.GetGlobalTexture("_CameraDepthTexture");
+                Texture sceneMotionVectors = Shader.GetGlobalTexture("_CameraMotionVectorsTexture");
+
+                if (sceneDepth == null || sceneMotionVectors == null)
+                    PPE_DLSS_Plugin.Log.LogWarning("Native DLSS guide missing: " +
+                        (sceneDepth == null ? "depth " : "") +
+                        (sceneMotionVectors == null ? "motion-vectors" : ""));
+
+                // Execute DLSS with the live Unity guide resources.
+                bool success = _dlss.Evaluate(frameTime, sceneDepth, sceneMotionVectors);
 
                 if (success)
                 {

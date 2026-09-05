@@ -237,7 +237,7 @@ namespace PPE_DLSS
             }
         }
 
-        public bool Evaluate(float frameTimeMs)
+        public bool Evaluate(float frameTimeMs, Texture sceneDepth, Texture sceneMotionVectors)
         {
             if (!_initialized) return false;
 
@@ -245,6 +245,15 @@ namespace PPE_DLSS
             {
                 using (var param = new NGXParameter(_parameters))
                 {
+                    // Bind Unity's live camera resources at evaluate time. The previous
+                    // proof-of-concept passed an empty depth RT and a zeroed MV RT.
+                    IntPtr depthPtr = sceneDepth != null ? sceneDepth.GetNativeTexturePtr() : IntPtr.Zero;
+                    IntPtr motionPtr = sceneMotionVectors != null ? sceneMotionVectors.GetNativeTexturePtr() : IntPtr.Zero;
+                    if (depthPtr != IntPtr.Zero)
+                        param.Set("Depth", depthPtr);
+                    if (motionPtr != IntPtr.Zero)
+                        param.Set("MotionVectors", motionPtr);
+
                     param.Set("FrameTimeDeltaInMsec", frameTimeMs);
                     param.Set("Reset", (uint)0);
                     param.Set("Jitter.Offset.X", 0.0f);
