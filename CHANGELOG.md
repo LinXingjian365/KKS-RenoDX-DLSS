@@ -1,5 +1,11 @@
 # Changelog
 
+## v2.4.3
+
+- Replaced the minimal debug note with the complete native-DLSS failure ledger.
+- Added `DEVELOPMENT-LOG.md` covering the native plugin, ShortFuse, bridge, DLSSNR, HDRP/URP, runtime, driver, depth, performance, and add-on-conflict lessons.
+- Added proof criteria that distinguish a loaded DLL from a real NGX Super Resolution frame.
+
 ## v2.4.2
 
 - Marked the Feeder route as theoretically complete and runtime-verified for DLSS Super Resolution.

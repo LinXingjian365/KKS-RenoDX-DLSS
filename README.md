@@ -25,6 +25,8 @@ frame N delivered (..., DLSS SR, ...)
 
 The Feeder is an upstream project for this integration: [DLSS5-Feeder](https://github.com/jlrouzies-fr/DLSS5-Feeder). Its documented D3D11 work-resolution `work_upscale=2` path is experimental; this repository records the measured result rather than treating an add-on load as proof.
 
+The complete native-DLSS failure ledger and troubleshooting matrix are in [DEBUG.md](DEBUG.md). The chronological engineering record is in [DEVELOPMENT-LOG.md](DEVELOPMENT-LOG.md).
+
 ## Legacy/native routes
 
 `PPE_DLSS.dll` remains an experimental native NGX path. KKS does not expose the resources and feature contract it needs reliably, so keep its toggle off when using the Feeder route. ShortFuse `renodx-dlss.addon64` is a different replacement route and must not be loaded together with DLSS5-Feeder.
