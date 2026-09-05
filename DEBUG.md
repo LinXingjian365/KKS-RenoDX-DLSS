@@ -66,6 +66,32 @@ work_upscale=2
 
 Open ReShade `Home -> Add-ons -> Generic Depth`, enable the copy-before-clear options, then select the resource whose preview contains the 3D scene. The resource handle is created at runtime and cannot be safely hard-coded. See the [ReShade Generic Depth implementation](https://github.com/crosire/reshade/blob/main/examples/09-depth/generic_depth_addon.cpp).
 
+### MSAA-off test on KKS
+
+The active KKS settings were tested with both paths disabled:
+
+```ini
+org.bepinex.plugins.KKS_PostProcessingEffectsV3.cfg:
+AntiAliasing Mode = None
+
+keelhauled.graphicssettings.cfg:
+Anti-aliasing multiplier = Disabled
+```
+
+After restart, the Feeder still reported `feature ready ... DLSS Quality`, `DLSS SR`, and non-zero motion vectors, while the depth probe remained flat. This isolates the current depth failure from MSAA. The files were backed up under `D:\Koikatsu Sunshine\_codex_archive\DLSS\msaa_off_20260905_164527`.
+
+### Why the current native `PPE_DLSS.dll` is not yet a native-input implementation
+
+The repository's experimental source was useful for proving the failure mode, but it is not ready for release as a native solution:
+
+- `DLSSWrapper.CreateTextures()` creates a new depth texture but never copies KKS scene depth into it.
+- The motion-vector texture is explicitly cleared to zero.
+- `OnRenderImage` copies only the final color image; it does not capture KKS's pre-tonemap scene color, depth, exposure, or jittered camera state.
+- `ScalableBufferManager.ResizeBuffers` alone does not make every Studio camera and post-processing pass render a valid DLSS input at the requested resolution.
+- The wrapper has no robust D3D11 resource-state/synchronization and output ownership path for the live Unity swapchain.
+
+Therefore its “native” toggle must remain experimental. Making it genuinely native requires a Unity-side input bridge plus correct NGX parameter binding, not another DLL or config switch.
+
 ### Multiple add-ons silently cancel each other
 
 Never load these together:

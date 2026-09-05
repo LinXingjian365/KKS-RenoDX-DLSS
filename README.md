@@ -27,6 +27,8 @@ The Feeder is an upstream project for this integration: [DLSS5-Feeder](https://g
 
 The complete native-DLSS failure ledger and troubleshooting matrix are in [DEBUG.md](DEBUG.md). The chronological engineering record is in [DEVELOPMENT-LOG.md](DEVELOPMENT-LOG.md).
 
+The native `PPE_DLSS.dll` implementation remains explicitly experimental: its current wrapper is not shipped as a verified native-input solution. The verified working path is still DLSS5-Feeder + RenoDX DLSS5.
+
 ## Legacy/native routes
 
 `PPE_DLSS.dll` remains an experimental native NGX path. KKS does not expose the resources and feature contract it needs reliably, so keep its toggle off when using the Feeder route. ShortFuse `renodx-dlss.addon64` is a different replacement route and must not be loaded together with DLSS5-Feeder.

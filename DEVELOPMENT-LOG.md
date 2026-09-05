@@ -49,3 +49,9 @@ frame 1 delivered (..., DLSS SR, ...)
 - Generic Depth scene selection: one-time manual runtime step remains.
 - Frame generation: not enabled.
 - Proprietary NVIDIA/ReShade/Discord binaries: not redistributed by this repository.
+
+## 2026-09-05: MSAA isolation and native-input audit
+
+KKS hardware/post-process antialiasing was disabled and Studio was restarted. DLSS5-Feeder continued to produce genuine DLSS SR frames, but its depth probe stayed flat. The failure is therefore not caused by KKS MSAA.
+
+An audit of the native `PPE_DLSS` source found that it currently creates an empty depth texture and a zeroed motion-vector texture, then submits only a final color copy to NGX. That is a proof-of-concept shell, not a native-input implementation. The correct next native milestone is to capture KKS's real scene depth and motion data, bind them with the official NGX parameter names/flags, and synchronize the D3D11 output before presenting it.
