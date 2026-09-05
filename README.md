@@ -1,10 +1,16 @@
-# KKS DLSS Upscaler
+# KKS DLSS / RenoDX integration notes
 
-Native NGX integration experiment for Koikatsu Sunshine CharaStudio (Unity 2019.4, D3D11).
+Koikatsu Sunshine CharaStudio (Unity 2019.4, D3D11) integration notes and the legacy native NGX experiment.
 
-## Important status
+## Recommended route: RenoDX DLSS 5 bridge
 
-This project does not use ReShade. KKS is a Unity 2019 built-in/D3D11 application, and native DLSS requires the real Unity D3D11 device, valid depth and motion-vector resources, and a driver-supported NGX feature. The plugin now retries after Studio cameras appear and reports the exact initialization state, but it must not claim DLSS is active until the log says `Initialization successful!` and the overlay says `DLSS ON`.
+KKS has no native DLSS contract. The verified route is ReShade 6.8 add-on support plus RenoDX DLSS 5 and the DX11 bridge. It uses the substitute contract from ReShade depth and NVIDIA Optical Flow, so it is not equivalent to native game DLSS and may soften text or moving fine detail.
+
+The exact verified setup is documented in [RESHade-DLSS.md](RESHade-DLSS.md). The important runtime proof is `dlss5-bridge.log` showing `session ready`, `feature ready`, `motion vectors (NVIDIA optical flow): bound`, and `frames delivered`.
+
+## Legacy native route
+
+`PPE_DLSS.dll` remains an experimental native NGX path. KKS does not expose the resources and feature contract it needs reliably, so keep its toggle off when using RenoDX. A DLL being present or a shortcut being accepted is not proof that native DLSS is active.
 
 ## Install
 
@@ -23,4 +29,6 @@ Target: `net471`, references the KKS Unity 2019.4 managed assemblies.
 - This is native NGX, not a post-process shader approximation.
 - A successful DLL load is not proof that NGX can create a Super Resolution feature.
 - If NGX returns PlatformError or FeatureNotSupported, the switch cannot force DLSS on; the log is the source of truth.
-- No ReShade, Streamline proxy, frame-generation DLL, or NIS fallback is included.
+- The RenoDX route requires third-party ReShade add-ons and Streamline/NVIDIA runtime files; those binary dependencies are not redistributed in this repository.
+- No frame generation is enabled.
+- The native route and RenoDX route should not be enabled as competing upscalers in the same session.
