@@ -9,6 +9,14 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- Native probes and local third-party research are not managed plugin sources. -->
+    <Compile Remove="native\**\*.cs" />
+    <EmbeddedResource Remove="native\**" />
+    <None Remove="native\**" />
+    <Content Remove="native\**" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Reference Include="BepInEx">
       <HintPath>D:\Koikatsu Sunshine\BepInEx\core\BepInEx.dll</HintPath>
       <Private>false</Private>

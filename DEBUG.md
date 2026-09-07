@@ -2,6 +2,15 @@
 
 This file records the failed native experiments and the verified workaround. A loaded DLL or visible toggle is not treated as proof that DLSS is rendering.
 
+## Strict acceptance rule
+
+The repository now separates two claims:
+
+- **Transport/evaluation success:** `session ready`, `feature ready`, and at least three `frame N delivered` lines.
+- **Temporal-input quality success:** the same markers plus non-flat scene depth and non-zero motion vectors.
+
+Run `tools/verify_dlss_log.ps1`. The current KKS log passes the first claim and fails the second. This is intentional: NGX is running, but the guides are not yet trustworthy enough to call the result accurate native DLSS.
+
 ## Environment
 
 - Koikatsu Sunshine CharaStudio
@@ -97,6 +106,10 @@ The repository's experimental source was useful for proving the failure mode, bu
 - The wrapper has no robust D3D11 resource-state/synchronization and output ownership path for the live Unity swapchain.
 
 Therefore its “native” toggle must remain experimental. Making it genuinely native requires a Unity-side input bridge plus correct NGX parameter binding, not another DLL or config switch.
+
+### `dlss5-bridge` is not a magic native-DLSS switch
+
+The current community bridge has two materially different modes. Mirror mode forwards a genuine DLSS contract from a DX11 title that already calls DLSS. Synthetic mode can use ReShade depth and NVIDIA optical flow to manufacture a substitute motion guide. KKS has no original DLSS call, so only the latter category applies unless the native plugin is completed. It can be a useful fallback, but depth/MV probes and image comparisons must be recorded; DLL loading is not proof of accuracy.
 
 ### Multiple add-ons silently cancel each other
 

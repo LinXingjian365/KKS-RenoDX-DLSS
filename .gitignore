@@ -1,4 +1,8 @@
 bin/
 obj/
+native/third_party/
+native/_dlsstweaks/
+native/*.exe
+native/*.obj
 backups/
 *.zip

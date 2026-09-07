@@ -10,7 +10,7 @@ KKS has no native DLSS feature contract. The working route is:
 
 ## Release status
 
-The DLSS contract and Super Resolution path are verified. The remaining per-machine step is selecting KKS's live scene depth resource in ReShade Generic Depth. This cannot be reliably hard-coded because the resource handle is created and destroyed by the running D3D11 device; the repository ships the best automatic heuristics and documents the one-time runtime selection.
+The NGX transport, feature creation, and Super Resolution evaluation are verified. That is not yet the same as verified temporal quality: the current KKS capture has a flat depth probe and nearly-zero motion-vector probe. Run `powershell -ExecutionPolicy Bypass -File tools/verify_dlss_log.ps1` after every test. It reports transport success separately from the strict depth/MV quality gate.
 
 This is the route that actually produced the following runtime proof on an RTX 3060 Laptop with driver 616.56:
 
@@ -26,6 +26,12 @@ frame N delivered (..., DLSS SR, ...)
 The Feeder is an upstream project for this integration: [DLSS5-Feeder](https://github.com/jlrouzies-fr/DLSS5-Feeder). Its documented D3D11 work-resolution `work_upscale=2` path is experimental; this repository records the measured result rather than treating an add-on load as proof.
 
 The complete native-DLSS failure ledger and troubleshooting matrix are in [DEBUG.md](DEBUG.md). The chronological engineering record is in [DEVELOPMENT-LOG.md](DEVELOPMENT-LOG.md).
+
+## Native contract status
+
+The community `dlss5-bridge` project is useful evidence for the correct architecture, but its mirror mode is for DX11 games that already submit a native DLSS request. Its synthetic mode can construct a substitute from ReShade depth plus optical-flow motion; that is a valid fallback experiment, not KKS's original motion-vector contract. KKS currently has no native DLSS request, so this repository does not label the Feeder, bridge-synth, or the unfinished `PPE_DLSS.dll` wrapper as "accurate native DLSS".
+
+The exact native route remains an engineering milestone: capture KKS's pre-tonemap color, real scene depth, temporal motion vectors, jitter and exposure; submit those resources through a private D3D12/NGX bridge; then synchronize and copy the result back before presentation. Until the strict verifier passes, the active route is a measured approximation with genuine NGX Super Resolution evaluation.
 
 The native `PPE_DLSS.dll` implementation remains explicitly experimental: its current wrapper is not shipped as a verified native-input solution. The verified working path is still DLSS5-Feeder + RenoDX DLSS5.
 
@@ -52,5 +58,6 @@ Target: `net471`, references the KKS Unity 2019.4 managed assemblies.
 - If NGX returns PlatformError or FeatureNotSupported, the switch cannot force DLSS on; the log is the source of truth.
 - The route requires third-party ReShade add-ons and NVIDIA runtime files; those binary dependencies are not redistributed in this repository.
 - Generic Depth must be manually pointed at KKS's scene depth draw/clear. A log line saying `Depth probe ... flat` means the wrong buffer was selected and temporal quality will be reduced even though the DLSS frames are delivered.
+- A log line saying `MV probe ... 0.000 px` means the motion guide is also unusable; a successful NGX frame count alone does not pass the quality gate.
 - No frame generation is enabled.
 - Do not load ShortFuse `renodx-dlss`, `dlss5-bridge`, or a second neural consumer beside the current Feeder + RenoDX DLSS5 route.

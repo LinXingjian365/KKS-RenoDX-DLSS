@@ -62,3 +62,9 @@ The project is now published as **KKS-RenoDX-DLSS** so the name matches the acti
 - Report graphics API, shader model, compute support, and driver string.
 - Show explicit `WAITING_FOR_CAMERA`, `INIT_FAILED`, and `UNSUPPORTED_API` states.
 - Request camera depth and motion-vector textures before native initialization.
+## 2.5.0 - 2026-09-07
+
+- Added `tools/verify_dlss_log.ps1` with separate transport and strict temporal-input quality gates.
+- Documented the current measured state: NGX evaluation and frame delivery pass, but KKS depth/MV probes are flat and do not pass the accuracy gate.
+- Documented the actual scope of `dlss5-bridge` mirror versus synthetic modes.
+- Excluded the local DLSSTweaks research clone from source control.

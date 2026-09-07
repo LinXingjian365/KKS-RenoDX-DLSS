@@ -2,6 +2,12 @@
 
 ## 2026-09-05: Native DLSS investigation and verified Feeder route
 
+### 2026-09-07: Strict runtime acceptance gate
+
+The current Feeder log proves that NGX initializes, creates a Super Resolution feature, and delivers multiple frames. It also reports a flat depth probe and nearly-zero motion vectors. The project therefore records two separate outcomes: transport/evaluation PASS, strict temporal-input quality FAIL. `tools/verify_dlss_log.ps1` makes this distinction reproducible and exits non-zero until both guides contain useful scene data.
+
+Research also confirmed the boundary of `dlss5-bridge`: mirror mode is designed for an existing native DLSS request, while synthetic mode is a substitute built from ReShade depth and optical flow. It is not an exact KKS-native input path. The native milestone remains a private D3D12 NGX bridge with real KKS color/depth/MV/jitter/exposure capture and synchronized output copy-back.
+
 ### Failed native approaches
 
 1. **BepInEx `PPE_DLSS.dll`**: camera discovery and managed initialization worked, but KKS did not provide the color/depth/motion-vector contract and command-queue ownership required by NGX. No reliable native `CreateFeature`/`EvaluateFeature` pair was produced.
