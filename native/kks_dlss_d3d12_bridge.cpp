@@ -325,13 +325,15 @@ extern "C" __declspec(dllexport) unsigned int __cdecl KKS_DLSS12_AttachD3D11(voi
     IDXGIDevice* dxgi11 = nullptr;
     IDXGIAdapter* adapter11 = nullptr;
     IDXGIAdapter* adapter12 = nullptr;
+    IDXGIDevice* dxgi12 = nullptr;
     DXGI_ADAPTER_DESC desc11{};
     DXGI_ADAPTER_DESC desc12{};
     bool matched = false;
     if (FAILED(d3d11->QueryInterface(IID_PPV_ARGS(&dxgi11)))) { g_attachCode = 2; goto done; }
     if (FAILED(dxgi11->GetAdapter(&adapter11))) { g_attachCode = 3; goto done; }
     if (FAILED(adapter11->GetDesc(&desc11))) { g_attachCode = 4; goto done; }
-    if (FAILED(g_device->QueryInterface(IID_PPV_ARGS(&adapter12)))) { g_attachCode = 5; goto done; }
+    if (FAILED(g_device->QueryInterface(IID_PPV_ARGS(&dxgi12)))) { g_attachCode = 5; goto done; }
+    if (FAILED(dxgi12->GetAdapter(&adapter12))) { g_attachCode = 5; goto done; }
     if (FAILED(adapter12->GetDesc(&desc12))) { g_attachCode = 6; goto done; }
     matched = desc11.AdapterLuid.LowPart == desc12.AdapterLuid.LowPart && desc11.AdapterLuid.HighPart == desc12.AdapterLuid.HighPart;
     if (!matched) g_attachCode = 7;
@@ -346,6 +348,7 @@ extern "C" __declspec(dllexport) unsigned int __cdecl KKS_DLSS12_AttachD3D11(voi
     }
 done:
     if (adapter12) adapter12->Release();
+    if (dxgi12) dxgi12->Release();
     if (adapter11) adapter11->Release();
     if (dxgi11) dxgi11->Release();
     if (matched) g_attachCode = 8;
