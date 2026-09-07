@@ -4,5 +4,6 @@ native/third_party/
 native/_dlsstweaks/
 native/*.exe
 native/*.obj
+native/*.dll
 backups/
 *.zip
