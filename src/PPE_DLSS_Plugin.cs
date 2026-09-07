@@ -211,6 +211,12 @@ namespace PPE_DLSS
             _dlss = new DLSSWrapper();
             if (!_dlss.Init(renderW, renderH, outW, outH))
             {
+                if (_dlss.BridgeActive)
+                {
+                    _initialized = true;
+                    PPE_DLSS_Plugin.Log.LogWarning("Native D3D12 bridge is active in input-capture mode; NGX D3D11 feature is not used.");
+                    return;
+                }
                 PPE_DLSS_Plugin.Log.LogError("DLSS SDK init failed");
                 PPE_DLSS_Plugin.Instance?.NotifyInitFailed();
                 return;

@@ -1,9 +1,36 @@
 using System;
+using System.IO;
 using System.Runtime.InteropServices;
 using UnityEngine;
 
 namespace PPE_DLSS
 {
+    internal static class D3D12BridgeNative
+    {
+        private const string DLL = "kks_dlss_d3d12_bridge.dll";
+
+        [DllImport(DLL, CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Unicode)]
+        internal static extern uint KKS_DLSS12_Init(string appDataPath);
+
+        [DllImport(DLL, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern uint KKS_DLSS12_AttachD3D11(IntPtr device, IntPtr context);
+
+        [DllImport(DLL, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern uint KKS_DLSS12_StageD3D11Texture(uint slot, IntPtr resource);
+
+        [DllImport(DLL, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern IntPtr KKS_DLSS12_GetD3D12Texture(uint slot);
+
+        [DllImport(DLL, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern uint KKS_DLSS12_LastResult();
+
+        [DllImport(DLL, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern uint KKS_DLSS12_LastFeatureResult();
+
+        [DllImport(DLL, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern void KKS_DLSS12_Shutdown();
+    }
+
     // Native D3D11 helper DLL
     internal static class NativeD3D
     {
@@ -34,6 +61,7 @@ namespace PPE_DLSS
         // D3D11 stuff
         private IntPtr _d3dDevice;
         private IntPtr _d3dContext;
+        private bool _bridgeActive;
 
         public int RenderWidth { get; private set; }
         public int RenderHeight { get; private set; }
@@ -41,6 +69,7 @@ namespace PPE_DLSS
         public int OutputHeight { get; private set; }
 
         public bool IsInitialized => _initialized;
+        public bool BridgeActive => _bridgeActive;
 
         private static void NativeLog(string message) => PPE_DLSS_Plugin.Log?.LogInfo("[Native] " + message);
         private static void NativeWarn(string message) => PPE_DLSS_Plugin.Log?.LogWarning("[Native] " + message);
@@ -77,6 +106,8 @@ namespace PPE_DLSS
                 _d3dContext = GetImmediateContext(_d3dDevice);
                 NativeLog($"D3D11 device=0x{_d3dDevice.ToInt64():X}, context=0x{_d3dContext.ToInt64():X}");
                 Debug.Log($"[DLSS] Got D3D11 context: 0x{_d3dContext.ToInt64():X}");
+
+                TryStartD3D12Bridge();
 
                 // Step 2: Verify DLL works
                 try
@@ -279,7 +310,11 @@ namespace PPE_DLSS
 
         public bool Evaluate(float frameTimeMs, Texture sceneDepth, Texture sceneMotionVectors)
         {
-            if (!_initialized) return false;
+            if (!_initialized)
+            {
+                StageBridgeInputs(sceneDepth, sceneMotionVectors);
+                return false;
+            }
 
             try
             {
@@ -289,6 +324,7 @@ namespace PPE_DLSS
                     // proof-of-concept passed an empty depth RT and a zeroed MV RT.
                     IntPtr depthPtr = sceneDepth != null ? sceneDepth.GetNativeTexturePtr() : IntPtr.Zero;
                     IntPtr motionPtr = sceneMotionVectors != null ? sceneMotionVectors.GetNativeTexturePtr() : IntPtr.Zero;
+                    StageBridgeInputs(sceneDepth, sceneMotionVectors);
                     if (depthPtr != IntPtr.Zero)
                         param.SetD3D11Resource("Depth", depthPtr);
                     if (motionPtr != IntPtr.Zero)
@@ -402,6 +438,42 @@ namespace PPE_DLSS
             }
         }
 
+        private void TryStartD3D12Bridge()
+        {
+            try
+            {
+                string root = Directory.GetParent(Application.dataPath)?.FullName;
+                if (string.IsNullOrEmpty(root)) return;
+                uint init = D3D12BridgeNative.KKS_DLSS12_Init(root);
+                uint attach = init == 1 ? D3D12BridgeNative.KKS_DLSS12_AttachD3D11(_d3dDevice, _d3dContext) : 0;
+                _bridgeActive = init == 1 && attach == 1;
+                NativeLog($"D3D12 bridge init=0x{init:X8}, feature=0x{D3D12BridgeNative.KKS_DLSS12_LastFeatureResult():X8}, attach={attach}, active={_bridgeActive}");
+            }
+            catch (Exception e)
+            {
+                _bridgeActive = false;
+                NativeWarn($"D3D12 bridge unavailable: {e.Message}");
+            }
+        }
+
+        private void StageBridgeInputs(Texture sceneDepth, Texture sceneMotionVectors)
+        {
+            if (!_bridgeActive) return;
+            try
+            {
+                IntPtr color = _colorRT != null ? _colorRT.GetNativeTexturePtr() : IntPtr.Zero;
+                IntPtr depth = sceneDepth != null ? sceneDepth.GetNativeTexturePtr() : IntPtr.Zero;
+                IntPtr motion = sceneMotionVectors != null ? sceneMotionVectors.GetNativeTexturePtr() : IntPtr.Zero;
+                if (color != IntPtr.Zero) D3D12BridgeNative.KKS_DLSS12_StageD3D11Texture(0, color);
+                if (depth != IntPtr.Zero) D3D12BridgeNative.KKS_DLSS12_StageD3D11Texture(1, depth);
+                if (motion != IntPtr.Zero) D3D12BridgeNative.KKS_DLSS12_StageD3D11Texture(2, motion);
+            }
+            catch (Exception e)
+            {
+                NativeWarn($"D3D12 bridge staging failed: {e.Message}");
+            }
+        }
+
         private IntPtr GetImmediateContext(IntPtr device)
         {
             try
@@ -441,6 +513,11 @@ namespace PPE_DLSS
                 if (_initialized)
                 {
                     DLSSNative.D3D11_Shutdown();
+                }
+                if (_bridgeActive)
+                {
+                    D3D12BridgeNative.KKS_DLSS12_Shutdown();
+                    _bridgeActive = false;
                 }
                 _initialized = false;
                 Debug.Log("[DLSS] Disposed");
