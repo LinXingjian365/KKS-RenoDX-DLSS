@@ -138,6 +138,7 @@ namespace PPE_DLSS
     {
         private DLSSWrapper _dlss;
         private Camera _cam;
+        private DLSSGuideCapture _guides;
         private bool _initialized;
         private float _lastFrameTime;
         private float _originalScale = 1f;
@@ -159,7 +160,11 @@ namespace PPE_DLSS
         private void OnEnable()
         {
             if (_cam != null)
+            {
                 _cam.depthTextureMode |= DepthTextureMode.Depth | DepthTextureMode.MotionVectors;
+                _guides = new DLSSGuideCapture(_cam);
+                _guides.Install();
+            }
             try
             {
                 TryInitialize();
@@ -234,8 +239,8 @@ namespace PPE_DLSS
 
                 // Unity exposes these camera resources after depthTextureMode is enabled.
                 // They are the only native scene guides available without a ReShade bridge.
-                Texture sceneDepth = Shader.GetGlobalTexture("_CameraDepthTexture");
-                Texture sceneMotionVectors = Shader.GetGlobalTexture("_CameraMotionVectorsTexture");
+                Texture sceneDepth = _guides?.DepthTexture ?? Shader.GetGlobalTexture("_CameraDepthTexture");
+                Texture sceneMotionVectors = _guides?.MotionTexture ?? Shader.GetGlobalTexture("_CameraMotionVectorsTexture");
 
                 if (sceneDepth == null || sceneMotionVectors == null)
                     PPE_DLSS_Plugin.Log.LogWarning("Native DLSS guide missing: " +
@@ -273,6 +278,9 @@ namespace PPE_DLSS
         {
             try { ScalableBufferManager.ResizeBuffers(_originalScale, _originalScale); } catch { }
 
+            try { _guides?.Dispose(); } catch { }
+            _guides = null;
+
             _initialized = false;
             _dlss?.Dispose();
             _dlss = null;
@@ -281,6 +289,66 @@ namespace PPE_DLSS
         private void OnDestroy()
         {
             Cleanup();
+        }
+    }
+
+    // Captures Unity Built-in Forward attachments before post-processing. This is
+    // an input probe: it does not manufacture motion vectors when KKS shaders omit them.
+    internal sealed class DLSSGuideCapture : IDisposable
+    {
+        private readonly Camera _camera;
+        private CommandBuffer _commandBuffer;
+        private RenderTexture _depthTexture;
+        private RenderTexture _motionTexture;
+
+        public Texture DepthTexture => _depthTexture;
+        public Texture MotionTexture => _motionTexture;
+
+        public DLSSGuideCapture(Camera camera)
+        {
+            _camera = camera;
+        }
+
+        public void Install()
+        {
+            if (_camera == null || _commandBuffer != null) return;
+
+            int width = Mathf.Max(1, _camera.pixelWidth);
+            int height = Mathf.Max(1, _camera.pixelHeight);
+            _depthTexture = new RenderTexture(width, height, 0, RenderTextureFormat.RFloat)
+            {
+                name = "KKS_DLSS_NativeDepth",
+                filterMode = FilterMode.Point,
+                wrapMode = TextureWrapMode.Clamp
+            };
+            _motionTexture = new RenderTexture(width, height, 0, RenderTextureFormat.RGHalf)
+            {
+                name = "KKS_DLSS_NativeMotionVectors",
+                filterMode = FilterMode.Point,
+                wrapMode = TextureWrapMode.Clamp
+            };
+            _depthTexture.Create();
+            _motionTexture.Create();
+
+            _commandBuffer = new CommandBuffer { name = "KKS DLSS native guide capture" };
+            _commandBuffer.Blit(BuiltinRenderTextureType.Depth, new RenderTargetIdentifier(_depthTexture));
+            _commandBuffer.Blit(BuiltinRenderTextureType.MotionVectors, new RenderTargetIdentifier(_motionTexture));
+            _camera.AddCommandBuffer(CameraEvent.BeforeImageEffectsOpaque, _commandBuffer);
+            PPE_DLSS_Plugin.Log.LogInfo($"Native guide capture installed: {width}x{height}");
+        }
+
+        public void Dispose()
+        {
+            if (_camera != null && _commandBuffer != null)
+            {
+                _camera.RemoveCommandBuffer(CameraEvent.BeforeImageEffectsOpaque, _commandBuffer);
+            }
+            _commandBuffer?.Release();
+            _commandBuffer = null;
+            if (_depthTexture != null) UnityEngine.Object.Destroy(_depthTexture);
+            if (_motionTexture != null) UnityEngine.Object.Destroy(_motionTexture);
+            _depthTexture = null;
+            _motionTexture = null;
         }
     }
 }
