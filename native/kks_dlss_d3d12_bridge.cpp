@@ -17,6 +17,7 @@ namespace
     unsigned long long g_appId = 0;
     unsigned int g_attachCode = 0;
     ID3D12CommandQueue* g_queue = nullptr;
+    IDXGIAdapter1* g_adapter12 = nullptr;
     ID3D12CommandAllocator* g_allocator = nullptr;
     ID3D12GraphicsCommandList* g_list = nullptr;
     NVSDK_NGX_Parameter* g_params = nullptr;
@@ -76,6 +77,7 @@ namespace
         if (g_list) { g_list->Release(); g_list = nullptr; }
         if (g_allocator) { g_allocator->Release(); g_allocator = nullptr; }
         if (g_queue) { g_queue->Release(); g_queue = nullptr; }
+        if (g_adapter12) { g_adapter12->Release(); g_adapter12 = nullptr; }
         if (g_device)
         {
             using ShutdownFn = NVSDK_NGX_Result (NVSDK_CONV *)(ID3D12Device*);
@@ -243,6 +245,7 @@ extern "C" __declspec(dllexport) unsigned int __cdecl KKS_DLSS12_Init(const wcha
     }
 
     hr = D3D12CreateDevice(adapter, D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&g_device));
+    if (SUCCEEDED(hr) && adapter) { adapter->AddRef(); g_adapter12 = adapter; }
     if (adapter) adapter->Release();
     factory->Release();
     if (FAILED(hr) || !g_device)
@@ -339,15 +342,15 @@ extern "C" __declspec(dllexport) unsigned int __cdecl KKS_DLSS12_AttachD3D11(voi
     IDXGIDevice* dxgi11 = nullptr;
     IDXGIAdapter* adapter11 = nullptr;
     IDXGIAdapter* adapter12 = nullptr;
-    IDXGIDevice* dxgi12 = nullptr;
     DXGI_ADAPTER_DESC desc11{};
     DXGI_ADAPTER_DESC desc12{};
     bool matched = false;
     if (FAILED(d3d11->QueryInterface(IID_PPV_ARGS(&dxgi11)))) { g_attachCode = 2; goto done; }
     if (FAILED(dxgi11->GetAdapter(&adapter11))) { g_attachCode = 3; goto done; }
     if (FAILED(adapter11->GetDesc(&desc11))) { g_attachCode = 4; goto done; }
-    if (FAILED(g_device->QueryInterface(IID_PPV_ARGS(&dxgi12)))) { g_attachCode = 5; goto done; }
-    if (FAILED(dxgi12->GetAdapter(&adapter12))) { g_attachCode = 5; goto done; }
+    if (!g_adapter12) { g_attachCode = 5; goto done; }
+    g_adapter12->AddRef();
+    adapter12 = g_adapter12;
     if (FAILED(adapter12->GetDesc(&desc12))) { g_attachCode = 6; goto done; }
     matched = desc11.AdapterLuid.LowPart == desc12.AdapterLuid.LowPart && desc11.AdapterLuid.HighPart == desc12.AdapterLuid.HighPart;
     if (!matched) g_attachCode = 7;
@@ -362,7 +365,6 @@ extern "C" __declspec(dllexport) unsigned int __cdecl KKS_DLSS12_AttachD3D11(voi
     }
 done:
     if (adapter12) adapter12->Release();
-    if (dxgi12) dxgi12->Release();
     if (adapter11) adapter11->Release();
     if (dxgi11) dxgi11->Release();
     if (matched) g_attachCode = 8;
