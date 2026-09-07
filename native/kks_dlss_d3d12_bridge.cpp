@@ -263,7 +263,6 @@ extern "C" __declspec(dllexport) unsigned int __cdecl KKS_DLSS12_Init(const wcha
         return static_cast<unsigned int>(g_last);
     }
 
-    NVSDK_NGX_FeatureCommonInfo common{};
     std::vector<std::wstring> dataPaths;
     dataPaths.emplace_back(path);
     dataPaths.emplace_back(std::wstring(path) + L"\\host64");
@@ -282,7 +281,7 @@ extern "C" __declspec(dllexport) unsigned int __cdecl KKS_DLSS12_Init(const wcha
             CreateDirectoryW(candidate.c_str(), nullptr);
             for (unsigned long long appId : appIds)
             {
-                g_last = guarded([&]() { return initStandard(appId, candidate.c_str(), g_device, &common, NVSDK_NGX_Version_API); });
+                g_last = guarded([&]() { return initStandard(appId, candidate.c_str(), g_device, nullptr, NVSDK_NGX_Version_API); });
                 if (g_last == NVSDK_NGX_Result_Success)
                 {
                     g_appId = appId;
@@ -301,7 +300,7 @@ extern "C" __declspec(dllexport) unsigned int __cdecl KKS_DLSS12_Init(const wcha
             "Unity 2019.4.9f1 KKS CharaStudio",
             dataPaths.back().c_str(),
             g_device,
-            &common,
+            nullptr,
             NVSDK_NGX_Version_API); });
     }
 
