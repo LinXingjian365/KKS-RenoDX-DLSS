@@ -1,4 +1,5 @@
 #include <windows.h>
+#include <d3d11.h>
 #include <d3d12.h>
 #include <dxgi1_6.h>
 #include <mutex>
@@ -22,6 +23,17 @@ namespace
     ID3D12Resource* g_depth = nullptr;
     ID3D12Resource* g_motion = nullptr;
     ID3D12Resource* g_output = nullptr;
+    ID3D11Device* g_d3d11 = nullptr;
+    ID3D11DeviceContext* g_d3d11Context = nullptr;
+
+    struct SharedSlot
+    {
+        ID3D11Texture2D* relay11 = nullptr;
+        HANDLE handle = nullptr;
+        ID3D12Resource* imported12 = nullptr;
+        D3D11_TEXTURE2D_DESC desc{};
+    };
+    SharedSlot g_slots[4];
     std::mutex g_mutex;
 
     template <typename T>
@@ -32,6 +44,15 @@ namespace
 
     void releaseDevice()
     {
+        for (auto& slot : g_slots)
+        {
+            if (slot.imported12) { slot.imported12->Release(); slot.imported12 = nullptr; }
+            if (slot.handle) { CloseHandle(slot.handle); slot.handle = nullptr; }
+            if (slot.relay11) { slot.relay11->Release(); slot.relay11 = nullptr; }
+            slot.desc = {};
+        }
+        if (g_d3d11Context) { g_d3d11Context->Release(); g_d3d11Context = nullptr; }
+        if (g_d3d11) { g_d3d11->Release(); g_d3d11 = nullptr; }
         if (g_handle)
         {
             using ReleaseFn = NVSDK_NGX_Result (NVSDK_CONV *)(NVSDK_NGX_Handle*);
@@ -151,6 +172,36 @@ namespace
         g_feature = guarded([&]() { return create(g_list, NVSDK_NGX_Feature_SuperSampling, g_params, &g_handle); });
         return g_feature == NVSDK_NGX_Result_Success && g_handle != nullptr;
     }
+
+    bool ensureSharedSlot(unsigned int slotIndex, ID3D11Texture2D* source)
+    {
+        if (slotIndex >= 4 || !source || !g_d3d11 || !g_device) return false;
+        D3D11_TEXTURE2D_DESC sourceDesc{};
+        source->GetDesc(&sourceDesc);
+        SharedSlot& slot = g_slots[slotIndex];
+        bool same = slot.relay11 && slot.desc.Width == sourceDesc.Width && slot.desc.Height == sourceDesc.Height && slot.desc.Format == sourceDesc.Format && slot.desc.ArraySize == sourceDesc.ArraySize;
+        if (!same)
+        {
+            if (slot.imported12) { slot.imported12->Release(); slot.imported12 = nullptr; }
+            if (slot.handle) { CloseHandle(slot.handle); slot.handle = nullptr; }
+            if (slot.relay11) { slot.relay11->Release(); slot.relay11 = nullptr; }
+            D3D11_TEXTURE2D_DESC relayDesc = sourceDesc;
+            relayDesc.BindFlags = 0;
+            relayDesc.CPUAccessFlags = 0;
+            relayDesc.MiscFlags = D3D11_RESOURCE_MISC_SHARED_NTHANDLE;
+            if (FAILED(g_d3d11->CreateTexture2D(&relayDesc, nullptr, &slot.relay11))) return false;
+            IDXGIResource1* dxgiResource = nullptr;
+            if (FAILED(slot.relay11->QueryInterface(IID_PPV_ARGS(&dxgiResource)))) return false;
+            HRESULT hr = dxgiResource->CreateSharedHandle(nullptr, GENERIC_ALL, nullptr, &slot.handle);
+            dxgiResource->Release();
+            if (FAILED(hr) || !slot.handle) return false;
+            if (FAILED(g_device->OpenSharedHandle(slot.handle, IID_PPV_ARGS(&slot.imported12)))) return false;
+            slot.desc = sourceDesc;
+        }
+        g_d3d11Context->CopyResource(slot.relay11, source);
+        g_d3d11Context->Flush();
+        return true;
+    }
 }
 
 extern "C" __declspec(dllexport) unsigned int __cdecl KKS_DLSS12_Init(const wchar_t* appDataPath)
@@ -261,6 +312,56 @@ extern "C" __declspec(dllexport) unsigned int __cdecl KKS_DLSS12_LastFeatureResu
 {
     std::lock_guard<std::mutex> lock(g_mutex);
     return static_cast<unsigned int>(g_feature);
+}
+
+extern "C" __declspec(dllexport) unsigned int __cdecl KKS_DLSS12_AttachD3D11(void* device, void* context)
+{
+    std::lock_guard<std::mutex> lock(g_mutex);
+    if (!device || !context || !g_device) return 0;
+    ID3D11Device* d3d11 = reinterpret_cast<ID3D11Device*>(device);
+    ID3D11DeviceContext* d3d11Context = reinterpret_cast<ID3D11DeviceContext*>(context);
+    IDXGIDevice* dxgi11 = nullptr;
+    IDXGIAdapter* adapter11 = nullptr;
+    IDXGIAdapter* adapter12 = nullptr;
+    DXGI_ADAPTER_DESC desc11{};
+    DXGI_ADAPTER_DESC desc12{};
+    bool matched = false;
+    if (FAILED(d3d11->QueryInterface(IID_PPV_ARGS(&dxgi11))) || FAILED(dxgi11->GetAdapter(&adapter11)) || FAILED(adapter11->GetDesc(&desc11))) goto done;
+    if (FAILED(g_device->QueryInterface(IID_PPV_ARGS(&adapter12))) || FAILED(adapter12->GetDesc(&desc12))) goto done;
+    matched = desc11.AdapterLuid.LowPart == desc12.AdapterLuid.LowPart && desc11.AdapterLuid.HighPart == desc12.AdapterLuid.HighPart;
+    if (matched)
+    {
+        d3d11->AddRef();
+        d3d11Context->AddRef();
+        if (g_d3d11Context) g_d3d11Context->Release();
+        if (g_d3d11) g_d3d11->Release();
+        g_d3d11 = d3d11;
+        g_d3d11Context = d3d11Context;
+    }
+done:
+    if (adapter12) adapter12->Release();
+    if (adapter11) adapter11->Release();
+    if (dxgi11) dxgi11->Release();
+    return matched ? 1u : 0u;
+}
+
+extern "C" __declspec(dllexport) unsigned int __cdecl KKS_DLSS12_StageD3D11Texture(unsigned int slot, void* resource)
+{
+    std::lock_guard<std::mutex> lock(g_mutex);
+    if (!g_d3d11 || !g_d3d11Context || slot >= 4 || !resource) return 0;
+    ID3D11Texture2D* source = nullptr;
+    ID3D11Resource* sourceResource = reinterpret_cast<ID3D11Resource*>(resource);
+    if (FAILED(sourceResource->QueryInterface(IID_PPV_ARGS(&source)))) return 0;
+    bool ok = ensureSharedSlot(slot, source);
+    source->Release();
+    return ok ? 1u : 0u;
+}
+
+extern "C" __declspec(dllexport) void* __cdecl KKS_DLSS12_GetD3D12Texture(unsigned int slot)
+{
+    std::lock_guard<std::mutex> lock(g_mutex);
+    if (slot >= 4) return nullptr;
+    return g_slots[slot].imported12;
 }
 
 extern "C" __declspec(dllexport) void __cdecl KKS_DLSS12_Shutdown()

@@ -16,6 +16,8 @@ The bridge was corrected to load the exact KKS-side `_nvngx.dll` and guard NGX e
 
 The bridge now also allocates a D3D12 queue/list and attempts a SuperSampling feature with test resources. NGX returns `0xBAD0000B` (`UnableToInitializeFeature`), so this is a feature-contract failure, not a transport failure. The next implementation step is to replace dummy resources with KKS-shared textures and match the exact Feeder/NVIDIA creation contract.
 
+The native bridge now has adapter-matched D3D11 attachment and shared NT-handle staging APIs. They copy a live D3D11 resource into a relay texture, flush the KKS context, and open the same allocation as an ID3D12Resource. This isolates the transport layer before wiring NGX evaluate and avoids pretending the current dummy-resource feature probe is production-ready.
+
 ### Failed native approaches
 
 1. **BepInEx `PPE_DLSS.dll`**: camera discovery and managed initialization worked, but KKS did not provide the color/depth/motion-vector contract and command-queue ownership required by NGX. No reliable native `CreateFeature`/`EvaluateFeature` pair was produced.

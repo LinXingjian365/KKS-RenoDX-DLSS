@@ -23,6 +23,8 @@ The probe was then corrected to load `D:\Koikatsu Sunshine\_nvngx.dll` explicitl
 
 The next isolated step creates a D3D12 command queue/list and calls `NVSDK_NGX_D3D12_CreateFeature` with test Color/Depth/MV/Output resources. The current result is `0xBAD0000B` (`UnableToInitializeFeature`). Therefore session success is now explicitly separated from feature success; the production path still requires the correct resource contract and consumer/runtime context.
 
+The bridge now exposes the next transport primitives: `KKS_DLSS12_AttachD3D11`, `KKS_DLSS12_StageD3D11Texture`, and `KKS_DLSS12_GetD3D12Texture`. They match the D3D11/D3D12 adapter by LUID, create `D3D11_RESOURCE_MISC_SHARED_NTHANDLE` relay textures, copy with the KKS immediate context, and open the same memory on D3D12. They are not called by the game yet; the next step is wiring these handles into a D3D12-only evaluate path.
+
 ## Environment
 
 - Koikatsu Sunshine CharaStudio
