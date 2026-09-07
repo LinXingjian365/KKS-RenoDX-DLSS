@@ -17,6 +17,10 @@ The native plugin found KKS's `Main Camera`, installed the Built-in guide captur
 
 The isolated D3D12 bridge probe is also safe to run outside the game. It creates a private D3D12 device and resolves the ProjectID export, but the current runtime returns `0xBAD00002` (`PlatformError`) for the unregistered test ProjectID. This is a runtime authorization/contract blocker, not a Unity texture problem; the bridge must use a valid NGX project/application identity before feature evaluation can be called legitimately.
 
+### D3D12 Core path corrected
+
+The probe was then corrected to load `D:\Koikatsu Sunshine\_nvngx.dll` explicitly and to catch NGX SEH faults. The standard `NVSDK_NGX_D3D12_Init` path now returns `0x00000001` with diagnostic AppID `0`. This is a valid private D3D12 NGX session; the remaining work is resource import, synchronization, feature creation, evaluation, and copy-back. The ProjectID path remains unsupported and is not used.
+
 ## Environment
 
 - Koikatsu Sunshine CharaStudio

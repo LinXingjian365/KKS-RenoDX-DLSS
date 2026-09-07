@@ -12,6 +12,8 @@ The native KKS test then confirmed a separate blocker: Unity D3D11 device/contex
 
 The first private D3D12 bridge probe now builds and runs in an isolated process. It creates a valid D3D12 device and resolves `NVSDK_NGX_D3D12_Init_ProjectID`, but the test ProjectID returns `0xBAD00002` (`PlatformError`). No game files are touched by this probe. The next native milestone is therefore valid NGX project/application identity plus shared D3D11/D3D12 resource synchronization, not another D3D11 retry.
 
+The bridge was corrected to load the exact KKS-side `_nvngx.dll` and guard NGX entry points with SEH. The standard D3D12 init now succeeds with diagnostic AppID `0`. This removes the identity blocker for the private session; it does not yet claim DLSS output because no feature or shared texture path is wired yet.
+
 ### Failed native approaches
 
 1. **BepInEx `PPE_DLSS.dll`**: camera discovery and managed initialization worked, but KKS did not provide the color/depth/motion-vector contract and command-queue ownership required by NGX. No reliable native `CreateFeature`/`EvaluateFeature` pair was produced.
