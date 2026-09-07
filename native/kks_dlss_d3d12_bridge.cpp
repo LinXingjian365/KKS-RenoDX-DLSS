@@ -14,6 +14,7 @@ namespace
     NVSDK_NGX_Result g_last = NVSDK_NGX_Result_FAIL_NotInitialized;
     NVSDK_NGX_Result g_feature = NVSDK_NGX_Result_FAIL_NotInitialized;
     unsigned long long g_appId = 0;
+    unsigned int g_attachCode = 0;
     ID3D12CommandQueue* g_queue = nullptr;
     ID3D12CommandAllocator* g_allocator = nullptr;
     ID3D12GraphicsCommandList* g_list = nullptr;
@@ -317,7 +318,8 @@ extern "C" __declspec(dllexport) unsigned int __cdecl KKS_DLSS12_LastFeatureResu
 extern "C" __declspec(dllexport) unsigned int __cdecl KKS_DLSS12_AttachD3D11(void* device, void* context)
 {
     std::lock_guard<std::mutex> lock(g_mutex);
-    if (!device || !context || !g_device) return 0;
+    g_attachCode = 0;
+    if (!device || !context || !g_device) { g_attachCode = 1; return 0; }
     ID3D11Device* d3d11 = reinterpret_cast<ID3D11Device*>(device);
     ID3D11DeviceContext* d3d11Context = reinterpret_cast<ID3D11DeviceContext*>(context);
     IDXGIDevice* dxgi11 = nullptr;
@@ -326,9 +328,13 @@ extern "C" __declspec(dllexport) unsigned int __cdecl KKS_DLSS12_AttachD3D11(voi
     DXGI_ADAPTER_DESC desc11{};
     DXGI_ADAPTER_DESC desc12{};
     bool matched = false;
-    if (FAILED(d3d11->QueryInterface(IID_PPV_ARGS(&dxgi11))) || FAILED(dxgi11->GetAdapter(&adapter11)) || FAILED(adapter11->GetDesc(&desc11))) goto done;
-    if (FAILED(g_device->QueryInterface(IID_PPV_ARGS(&adapter12))) || FAILED(adapter12->GetDesc(&desc12))) goto done;
+    if (FAILED(d3d11->QueryInterface(IID_PPV_ARGS(&dxgi11)))) { g_attachCode = 2; goto done; }
+    if (FAILED(dxgi11->GetAdapter(&adapter11))) { g_attachCode = 3; goto done; }
+    if (FAILED(adapter11->GetDesc(&desc11))) { g_attachCode = 4; goto done; }
+    if (FAILED(g_device->QueryInterface(IID_PPV_ARGS(&adapter12)))) { g_attachCode = 5; goto done; }
+    if (FAILED(adapter12->GetDesc(&desc12))) { g_attachCode = 6; goto done; }
     matched = desc11.AdapterLuid.LowPart == desc12.AdapterLuid.LowPart && desc11.AdapterLuid.HighPart == desc12.AdapterLuid.HighPart;
+    if (!matched) g_attachCode = 7;
     if (matched)
     {
         d3d11->AddRef();
@@ -342,7 +348,14 @@ done:
     if (adapter12) adapter12->Release();
     if (adapter11) adapter11->Release();
     if (dxgi11) dxgi11->Release();
+    if (matched) g_attachCode = 8;
     return matched ? 1u : 0u;
+}
+
+extern "C" __declspec(dllexport) unsigned int __cdecl KKS_DLSS12_LastAttachCode()
+{
+    std::lock_guard<std::mutex> lock(g_mutex);
+    return g_attachCode;
 }
 
 extern "C" __declspec(dllexport) unsigned int __cdecl KKS_DLSS12_StageD3D11Texture(unsigned int slot, void* resource)

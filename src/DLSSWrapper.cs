@@ -28,6 +28,9 @@ namespace PPE_DLSS
         internal static extern uint KKS_DLSS12_LastFeatureResult();
 
         [DllImport(DLL, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern uint KKS_DLSS12_LastAttachCode();
+
+        [DllImport(DLL, CallingConvention = CallingConvention.Cdecl)]
         internal static extern void KKS_DLSS12_Shutdown();
     }
 
@@ -447,7 +450,7 @@ namespace PPE_DLSS
                 uint init = D3D12BridgeNative.KKS_DLSS12_Init(root);
                 uint attach = init == 1 ? D3D12BridgeNative.KKS_DLSS12_AttachD3D11(_d3dDevice, _d3dContext) : 0;
                 _bridgeActive = init == 1 && attach == 1;
-                NativeLog($"D3D12 bridge init=0x{init:X8}, feature=0x{D3D12BridgeNative.KKS_DLSS12_LastFeatureResult():X8}, attach={attach}, active={_bridgeActive}");
+                NativeLog($"D3D12 bridge init=0x{init:X8}, feature=0x{D3D12BridgeNative.KKS_DLSS12_LastFeatureResult():X8}, attach={attach}, attachCode={D3D12BridgeNative.KKS_DLSS12_LastAttachCode()}, active={_bridgeActive}");
             }
             catch (Exception e)
             {
