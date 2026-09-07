@@ -70,3 +70,4 @@ The project is now published as **KKS-RenoDX-DLSS** so the name matches the acti
 - Excluded the local DLSSTweaks research clone from source control.
 - Stopped native-plugin retry storms after a terminal NGX D3D11 `PlatformError`/missing ProjectID export.
 - Validated the private D3D12 NGX standard-init path against KKS's exact `_nvngx.dll`; isolated probe returns success with AppID `0`.
+- Added isolated D3D12 queue/list, parameter, resource, and `CreateFeature` probe; records the current `UnableToInitializeFeature` boundary.

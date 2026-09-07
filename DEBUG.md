@@ -21,6 +21,8 @@ The isolated D3D12 bridge probe is also safe to run outside the game. It creates
 
 The probe was then corrected to load `D:\Koikatsu Sunshine\_nvngx.dll` explicitly and to catch NGX SEH faults. The standard `NVSDK_NGX_D3D12_Init` path now returns `0x00000001` with diagnostic AppID `0`. This is a valid private D3D12 NGX session; the remaining work is resource import, synchronization, feature creation, evaluation, and copy-back. The ProjectID path remains unsupported and is not used.
 
+The next isolated step creates a D3D12 command queue/list and calls `NVSDK_NGX_D3D12_CreateFeature` with test Color/Depth/MV/Output resources. The current result is `0xBAD0000B` (`UnableToInitializeFeature`). Therefore session success is now explicitly separated from feature success; the production path still requires the correct resource contract and consumer/runtime context.
+
 ## Environment
 
 - Koikatsu Sunshine CharaStudio

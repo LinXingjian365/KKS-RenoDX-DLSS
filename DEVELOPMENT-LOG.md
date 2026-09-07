@@ -14,6 +14,8 @@ The first private D3D12 bridge probe now builds and runs in an isolated process.
 
 The bridge was corrected to load the exact KKS-side `_nvngx.dll` and guard NGX entry points with SEH. The standard D3D12 init now succeeds with diagnostic AppID `0`. This removes the identity blocker for the private session; it does not yet claim DLSS output because no feature or shared texture path is wired yet.
 
+The bridge now also allocates a D3D12 queue/list and attempts a SuperSampling feature with test resources. NGX returns `0xBAD0000B` (`UnableToInitializeFeature`), so this is a feature-contract failure, not a transport failure. The next implementation step is to replace dummy resources with KKS-shared textures and match the exact Feeder/NVIDIA creation contract.
+
 ### Failed native approaches
 
 1. **BepInEx `PPE_DLSS.dll`**: camera discovery and managed initialization worked, but KKS did not provide the color/depth/motion-vector contract and command-queue ownership required by NGX. No reliable native `CreateFeature`/`EvaluateFeature` pair was produced.
