@@ -4,6 +4,7 @@
 #include <dxgi1_6.h>
 #include <mutex>
 #include <string>
+#include <vector>
 #include "third_party/DLSS/include/nvsdk_ngx.h"
 #include "third_party/DLSS/include/nvsdk_ngx_params.h"
 
@@ -263,31 +264,45 @@ extern "C" __declspec(dllexport) unsigned int __cdecl KKS_DLSS12_Init(const wcha
     }
 
     NVSDK_NGX_FeatureCommonInfo common{};
-    // The exact Core build accepts the mapped ProjectID path when loaded from
-    // KKS. Keep the standard path as a fallback for Feeder-compatible cores.
-    if (initProject)
+    std::vector<std::wstring> dataPaths;
+    dataPaths.emplace_back(path);
+    dataPaths.emplace_back(std::wstring(path) + L"\\host64");
+    wchar_t localAppData[MAX_PATH]{};
+    DWORD localLength = GetEnvironmentVariableW(L"LOCALAPPDATA", localAppData, MAX_PATH);
+    if (localLength > 0 && localLength < MAX_PATH)
+        dataPaths.emplace_back(std::wstring(localAppData) + L"\\KKS-DLSS-NGX");
+
+    // In a game process, the standard path is the least invasive route. Try
+    // writable data locations before the ProjectID entry point.
+    if (initStandard)
+    {
+        const unsigned long long appIds[] = { 0ull, 0x4B4B5353554E5348ull, 0x444C535354455354ull };
+        for (const std::wstring& candidate : dataPaths)
+        {
+            CreateDirectoryW(candidate.c_str(), nullptr);
+            for (unsigned long long appId : appIds)
+            {
+                g_last = guarded([&]() { return initStandard(appId, candidate.c_str(), g_device, &common, NVSDK_NGX_Version_API); });
+                if (g_last == NVSDK_NGX_Result_Success)
+                {
+                    g_appId = appId;
+                    break;
+                }
+            }
+            if (g_last == NVSDK_NGX_Result_Success) break;
+        }
+    }
+
+    if (g_last != NVSDK_NGX_Result_Success && initProject)
     {
         g_last = guarded([&]() { return initProject(
             "6a9c4c0d-6f1c-4c4d-9a70-6f2d0f4f2c19",
             NVSDK_NGX_ENGINE_TYPE_CUSTOM,
             "Unity 2019.4.9f1 KKS CharaStudio",
-            path,
+            dataPaths.back().c_str(),
             g_device,
             &common,
             NVSDK_NGX_Version_API); });
-    }
-    if (g_last != NVSDK_NGX_Result_Success && initStandard)
-    {
-        const unsigned long long appIds[] = { 0ull, 0x4B4B5353554E5348ull, 0x444C535354455354ull };
-        for (unsigned long long appId : appIds)
-        {
-            g_last = guarded([&]() { return initStandard(appId, path, g_device, &common, NVSDK_NGX_Version_API); });
-            if (g_last == NVSDK_NGX_Result_Success)
-            {
-                g_appId = appId;
-                break;
-            }
-        }
     }
 
     if (g_last != NVSDK_NGX_Result_Success)
