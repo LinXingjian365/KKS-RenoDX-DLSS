@@ -10,6 +10,8 @@ Research also confirmed the boundary of `dlss5-bridge`: mirror mode is designed 
 
 The native KKS test then confirmed a separate blocker: Unity D3D11 device/context discovery and guide-capture installation succeed, but the installed NGX runtime has no `NVSDK_NGX_D3D11_Init_with_ProjectID` export and every remaining D3D11 initialization attempt returns `PlatformError`. Automatic retry is now terminally suppressed; the implementation must move to the private D3D12 bridge.
 
+The first private D3D12 bridge probe now builds and runs in an isolated process. It creates a valid D3D12 device and resolves `NVSDK_NGX_D3D12_Init_ProjectID`, but the test ProjectID returns `0xBAD00002` (`PlatformError`). No game files are touched by this probe. The next native milestone is therefore valid NGX project/application identity plus shared D3D11/D3D12 resource synchronization, not another D3D11 retry.
+
 ### Failed native approaches
 
 1. **BepInEx `PPE_DLSS.dll`**: camera discovery and managed initialization worked, but KKS did not provide the color/depth/motion-vector contract and command-queue ownership required by NGX. No reliable native `CreateFeature`/`EvaluateFeature` pair was produced.

@@ -6,3 +6,7 @@ cmd /c "call `"$vs`" && cl /nologo /EHsc /std:c++17 /I`"$PSScriptRoot\third_part
 $bridgeSrc = Join-Path $PSScriptRoot 'kks_dlss_d3d12_bridge.cpp'
 $bridgeOut = Join-Path $PSScriptRoot 'kks_dlss_d3d12_bridge.dll'
 cmd /c "call `"$vs`" && cl /nologo /LD /EHsc /std:c++17 /I`"$PSScriptRoot\third_party\DLSS\include`" `"$bridgeSrc`" /Fe:`"$bridgeOut`" d3d12.lib dxgi.lib"
+
+$bridgeProbeSrc = Join-Path $PSScriptRoot 'bridge_probe.cpp'
+$bridgeProbeOut = Join-Path $PSScriptRoot 'bridge_probe.exe'
+cmd /c "call `"$vs`" && cl /nologo /EHsc /std:c++17 `"$bridgeProbeSrc`" /Fe:`"$bridgeProbeOut`""

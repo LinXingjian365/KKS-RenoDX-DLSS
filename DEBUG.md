@@ -15,6 +15,8 @@ Run `tools/verify_dlss_log.ps1`. The current KKS log passes the first claim and 
 
 The native plugin found KKS's `Main Camera`, installed the Built-in guide capture, and obtained valid Unity D3D11 device/context pointers. Initialization still fails because the installed `nvngx_dlss.dll` does not export `NVSDK_NGX_D3D11_Init_with_ProjectID`; all remaining D3D11 init attempts return `PlatformError`. The plugin now stops automatic retry after this terminal runtime failure. Press `Ctrl+D` only after changing the native bridge/runtime.
 
+The isolated D3D12 bridge probe is also safe to run outside the game. It creates a private D3D12 device and resolves the ProjectID export, but the current runtime returns `0xBAD00002` (`PlatformError`) for the unregistered test ProjectID. This is a runtime authorization/contract blocker, not a Unity texture problem; the bridge must use a valid NGX project/application identity before feature evaluation can be called legitimately.
+
 ## Environment
 
 - Koikatsu Sunshine CharaStudio
