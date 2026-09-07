@@ -11,6 +11,10 @@ The repository now separates two claims:
 
 Run `tools/verify_dlss_log.ps1`. The current KKS log passes the first claim and fails the second. This is intentional: NGX is running, but the guides are not yet trustworthy enough to call the result accurate native DLSS.
 
+### 2026-09-07 native D3D11 retry result
+
+The native plugin found KKS's `Main Camera`, installed the Built-in guide capture, and obtained valid Unity D3D11 device/context pointers. Initialization still fails because the installed `nvngx_dlss.dll` does not export `NVSDK_NGX_D3D11_Init_with_ProjectID`; all remaining D3D11 init attempts return `PlatformError`. The plugin now stops automatic retry after this terminal runtime failure. Press `Ctrl+D` only after changing the native bridge/runtime.
+
 ## Environment
 
 - Koikatsu Sunshine CharaStudio

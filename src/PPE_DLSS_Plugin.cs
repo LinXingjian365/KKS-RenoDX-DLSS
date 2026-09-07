@@ -22,6 +22,7 @@ namespace PPE_DLSS
         private float _nextRetry;
         private int _attemptCount;
         private string _status = "OFF";
+        private bool _nativeInitBlocked;
 
         private void Awake()
         {
@@ -46,11 +47,12 @@ namespace PPE_DLSS
                 }
                 else
                 {
+                    _nativeInitBlocked = false;
                     EnableDLSS.Value = true;
                     TryEnableDLSS();
                 }
             }
-            else if (EnableDLSS.Value && _dlssComponent == null && Time.unscaledTime >= _nextRetry)
+            else if (EnableDLSS.Value && !_nativeInitBlocked && _dlssComponent == null && Time.unscaledTime >= _nextRetry)
             {
                 TryEnableDLSS();
             }
@@ -123,9 +125,10 @@ namespace PPE_DLSS
 
         public void NotifyInitFailed()
         {
-            Log.LogError("DLSS init failed, auto-disabled");
+            _nativeInitBlocked = true;
+            Log.LogError("DLSS init failed; automatic retries stopped. Press Ctrl+D after changing the native bridge/runtime.");
             EnableDLSS.Value = false;
-            _status = "INIT_FAILED";
+            _status = "NATIVE_NGX_UNAVAILABLE";
             if (_dlssComponent != null)
             {
                 Destroy(_dlssComponent);

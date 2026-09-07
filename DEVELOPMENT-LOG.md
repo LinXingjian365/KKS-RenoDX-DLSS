@@ -8,6 +8,8 @@ The current Feeder log proves that NGX initializes, creates a Super Resolution f
 
 Research also confirmed the boundary of `dlss5-bridge`: mirror mode is designed for an existing native DLSS request, while synthetic mode is a substitute built from ReShade depth and optical flow. It is not an exact KKS-native input path. The native milestone remains a private D3D12 NGX bridge with real KKS color/depth/MV/jitter/exposure capture and synchronized output copy-back.
 
+The native KKS test then confirmed a separate blocker: Unity D3D11 device/context discovery and guide-capture installation succeed, but the installed NGX runtime has no `NVSDK_NGX_D3D11_Init_with_ProjectID` export and every remaining D3D11 initialization attempt returns `PlatformError`. Automatic retry is now terminally suppressed; the implementation must move to the private D3D12 bridge.
+
 ### Failed native approaches
 
 1. **BepInEx `PPE_DLSS.dll`**: camera discovery and managed initialization worked, but KKS did not provide the color/depth/motion-vector contract and command-queue ownership required by NGX. No reliable native `CreateFeature`/`EvaluateFeature` pair was produced.

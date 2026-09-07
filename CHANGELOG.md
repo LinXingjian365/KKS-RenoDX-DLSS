@@ -68,3 +68,4 @@ The project is now published as **KKS-RenoDX-DLSS** so the name matches the acti
 - Documented the current measured state: NGX evaluation and frame delivery pass, but KKS depth/MV probes are flat and do not pass the accuracy gate.
 - Documented the actual scope of `dlss5-bridge` mirror versus synthetic modes.
 - Excluded the local DLSSTweaks research clone from source control.
+- Stopped native-plugin retry storms after a terminal NGX D3D11 `PlatformError`/missing ProjectID export.
