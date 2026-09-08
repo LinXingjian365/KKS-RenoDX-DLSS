@@ -34,6 +34,9 @@ namespace PPE_DLSS
         internal static extern uint KKS_DLSS12_LastStageCode(uint slot);
 
         [DllImport(DLL, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern int KKS_DLSS12_LastStageHRESULT(uint slot);
+
+        [DllImport(DLL, CallingConvention = CallingConvention.Cdecl)]
         internal static extern void KKS_DLSS12_Shutdown();
     }
 
@@ -477,7 +480,7 @@ namespace PPE_DLSS
                 if (_stageLogCooldown-- <= 0)
                 {
                     _stageLogCooldown = 120;
-                    NativeLog($"D3D12 staging codes: color={D3D12BridgeNative.KKS_DLSS12_LastStageCode(0)}, depth={D3D12BridgeNative.KKS_DLSS12_LastStageCode(1)}, motion={D3D12BridgeNative.KKS_DLSS12_LastStageCode(2)}");
+                    NativeLog($"D3D12 staging codes: color={D3D12BridgeNative.KKS_DLSS12_LastStageCode(0)}(0x{D3D12BridgeNative.KKS_DLSS12_LastStageHRESULT(0):X8}), depth={D3D12BridgeNative.KKS_DLSS12_LastStageCode(1)}(0x{D3D12BridgeNative.KKS_DLSS12_LastStageHRESULT(1):X8}), motion={D3D12BridgeNative.KKS_DLSS12_LastStageCode(2)}(0x{D3D12BridgeNative.KKS_DLSS12_LastStageHRESULT(2):X8})");
                 }
             }
             catch (Exception e)

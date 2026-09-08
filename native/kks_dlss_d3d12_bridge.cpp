@@ -17,6 +17,7 @@ namespace
     unsigned long long g_appId = 0;
     unsigned int g_attachCode = 0;
     unsigned int g_stageCodes[4]{};
+    HRESULT g_stageHresults[4]{};
     ID3D12CommandQueue* g_queue = nullptr;
     IDXGIAdapter1* g_adapter12 = nullptr;
     ID3D12CommandAllocator* g_allocator = nullptr;
@@ -196,9 +197,11 @@ namespace
             relayDesc.Usage = D3D11_USAGE_DEFAULT;
             relayDesc.BindFlags = 0;
             relayDesc.CPUAccessFlags = 0;
+            relayDesc.SampleDesc.Count = 1;
+            relayDesc.SampleDesc.Quality = 0;
             relayDesc.MiscFlags = D3D11_RESOURCE_MISC_SHARED_NTHANDLE;
             HRESULT createHr = g_d3d11->CreateTexture2D(&relayDesc, nullptr, &slot.relay11);
-            if (FAILED(createHr)) { g_stageCodes[slotIndex] = 30000000u | (static_cast<unsigned int>(createHr) & 0xFFFFu); return false; }
+            if (FAILED(createHr)) { g_stageHresults[slotIndex] = createHr; g_stageCodes[slotIndex] = 3; return false; }
             IDXGIResource1* dxgiResource = nullptr;
             if (FAILED(slot.relay11->QueryInterface(IID_PPV_ARGS(&dxgiResource)))) { g_stageCodes[slotIndex] = 4; return false; }
             HRESULT hr = dxgiResource->CreateSharedHandle(nullptr, GENERIC_ALL, nullptr, &slot.handle);
@@ -207,7 +210,10 @@ namespace
             if (FAILED(g_device->OpenSharedHandle(slot.handle, IID_PPV_ARGS(&slot.imported12)))) { g_stageCodes[slotIndex] = 6; return false; }
             slot.desc = sourceDesc;
         }
-        g_d3d11Context->CopyResource(slot.relay11, source);
+        if (sourceDesc.SampleDesc.Count > 1)
+            g_d3d11Context->ResolveSubresource(slot.relay11, 0, source, 0, sourceDesc.Format);
+        else
+            g_d3d11Context->CopyResource(slot.relay11, source);
         g_d3d11Context->Flush();
         g_stageCodes[slotIndex] = 8;
         return true;
@@ -399,6 +405,12 @@ extern "C" __declspec(dllexport) unsigned int __cdecl KKS_DLSS12_LastStageCode(u
 {
     std::lock_guard<std::mutex> lock(g_mutex);
     return slot < 4 ? g_stageCodes[slot] : 1u;
+}
+
+extern "C" __declspec(dllexport) int __cdecl KKS_DLSS12_LastStageHRESULT(unsigned int slot)
+{
+    std::lock_guard<std::mutex> lock(g_mutex);
+    return slot < 4 ? static_cast<int>(g_stageHresults[slot]) : 0;
 }
 
 extern "C" __declspec(dllexport) void* __cdecl KKS_DLSS12_GetD3D12Texture(unsigned int slot)
