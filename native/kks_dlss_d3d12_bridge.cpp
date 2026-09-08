@@ -27,6 +27,7 @@ namespace
     unsigned long long g_fenceValue = 0;
     NVSDK_NGX_Parameter* g_params = nullptr;
     NVSDK_NGX_Handle* g_handle = nullptr;
+    bool g_featureAttempted = false;
     ID3D12Resource* g_color = nullptr;
     ID3D12Resource* g_depth = nullptr;
     ID3D12Resource* g_motion = nullptr;
@@ -68,6 +69,7 @@ namespace
             if (release) { __try { release(g_handle); } __except (EXCEPTION_EXECUTE_HANDLER) { } }
             g_handle = nullptr;
         }
+        g_featureAttempted = false;
         if (g_params)
         {
             using DestroyFn = NVSDK_NGX_Result (NVSDK_CONV *)(NVSDK_NGX_Parameter*);
@@ -119,6 +121,10 @@ namespace
 
     bool createTestFeature()
     {
+        if (g_featureAttempted)
+            return g_feature == NVSDK_NGX_Result_Success && g_handle != nullptr;
+        g_featureAttempted = true;
+
         using AllocateFn = NVSDK_NGX_Result (NVSDK_CONV *)(NVSDK_NGX_Parameter**);
         using CreateFn = NVSDK_NGX_Result (NVSDK_CONV *)(ID3D12GraphicsCommandList*, NVSDK_NGX_Feature, NVSDK_NGX_Parameter*, NVSDK_NGX_Handle**);
         auto allocate = resolve<AllocateFn>("NVSDK_NGX_D3D12_AllocateParameters");
@@ -169,7 +175,10 @@ namespace
         g_params->Set("CreationNodeMask", (unsigned int)1);
         g_params->Set("VisibilityNodeMask", (unsigned int)1);
         g_params->Set("PerfQualityValue", (int)NVSDK_NGX_PerfQuality_Value_DLAA);
-        g_params->Set("DLSS.Feature.Create.Flags", (int)(NVSDK_NGX_DLSS_Feature_Flags_MVLowRes | NVSDK_NGX_DLSS_Feature_Flags_DepthInverted | NVSDK_NGX_DLSS_Feature_Flags_AutoExposure));
+        // KKS supplies full-resolution guide relays. Keep creation flags to the
+        // base HDR contract until the live depth convention is independently
+        // measured; incorrect guide flags make NGX reject the feature outright.
+        g_params->Set("DLSS.Feature.Create.Flags", (int)NVSDK_NGX_DLSS_Feature_Flags_IsHDR);
         g_params->Set("DLSS.Enable.Output.Subrects", (int)0);
         g_params->Set("Reset", (int)1);
         g_params->Set("Jitter.Offset.X", 0.0f);
@@ -180,6 +189,21 @@ namespace
         g_params->Set("Depth", sharedInputs ? g_slots[1].imported12 : g_depth);
         g_params->Set("MotionVectors", sharedInputs ? g_slots[2].imported12 : g_motion);
         g_params->Set("Output", g_output);
+
+        if (sharedInputs)
+        {
+            D3D12_RESOURCE_BARRIER barriers[3]{};
+            ID3D12Resource* inputs[3] = { g_slots[0].imported12, g_slots[1].imported12, g_slots[2].imported12 };
+            for (int i = 0; i < 3; ++i)
+            {
+                barriers[i].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+                barriers[i].Transition.pResource = inputs[i];
+                barriers[i].Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+                barriers[i].Transition.StateBefore = D3D12_RESOURCE_STATE_COMMON;
+                barriers[i].Transition.StateAfter = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+            }
+            g_list->ResourceBarrier(3, barriers);
+        }
 
         g_feature = guarded([&]() { return create(g_list, NVSDK_NGX_Feature_SuperSampling, g_params, &g_handle); });
         return g_feature == NVSDK_NGX_Result_Success && g_handle != nullptr;
