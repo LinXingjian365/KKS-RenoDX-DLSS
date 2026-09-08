@@ -5,6 +5,7 @@
 #include <mutex>
 #include <string>
 #include <vector>
+#include <cstdio>
 #include "third_party/DLSS/include/nvsdk_ngx.h"
 #include "third_party/DLSS/include/nvsdk_ngx_params.h"
 
@@ -28,6 +29,7 @@ namespace
     NVSDK_NGX_Parameter* g_params = nullptr;
     NVSDK_NGX_Handle* g_handle = nullptr;
     bool g_featureAttempted = false;
+    char g_capabilityReport[256] = "Capabilities not queried";
     ID3D12Resource* g_color = nullptr;
     ID3D12Resource* g_depth = nullptr;
     ID3D12Resource* g_motion = nullptr;
@@ -127,7 +129,7 @@ namespace
 
         using AllocateFn = NVSDK_NGX_Result (NVSDK_CONV *)(NVSDK_NGX_Parameter**);
         using CreateFn = NVSDK_NGX_Result (NVSDK_CONV *)(ID3D12GraphicsCommandList*, NVSDK_NGX_Feature, NVSDK_NGX_Parameter*, NVSDK_NGX_Handle**);
-        auto allocate = resolve<AllocateFn>("NVSDK_NGX_D3D12_AllocateParameters");
+        auto allocate = resolve<AllocateFn>("NVSDK_NGX_D3D12_GetCapabilityParameters");
         auto create = resolve<CreateFn>("NVSDK_NGX_D3D12_CreateFeature");
         if (!allocate || !create || !g_device) { g_feature = NVSDK_NGX_Result_FAIL_PlatformError; return false; }
 
@@ -139,6 +141,13 @@ namespace
 
         g_feature = guarded([&]() { return allocate(&g_params); });
         if (g_feature != NVSDK_NGX_Result_Success || !g_params) return false;
+        int available = -1, needsDriver = -1, initResult = 0;
+        auto availableResult = g_params->Get(NVSDK_NGX_Parameter_SuperSampling_Available, &available);
+        auto driverResult = g_params->Get(NVSDK_NGX_Parameter_SuperSampling_NeedsUpdatedDriver, &needsDriver);
+        auto featureResult = g_params->Get(NVSDK_NGX_Parameter_SuperSampling_FeatureInitResult, &initResult);
+        std::snprintf(g_capabilityReport, sizeof(g_capabilityReport),
+            "SR available=%d (query=0x%08X), needsDriver=%d (query=0x%08X), initResult=0x%08X (query=0x%08X)",
+            available, availableResult, needsDriver, driverResult, initResult, featureResult);
 
         const bool sharedInputs = g_slots[0].imported12 && g_slots[1].imported12 && g_slots[2].imported12;
         const UINT width = sharedInputs ? g_slots[0].desc.Width : 1280;
@@ -256,6 +265,8 @@ extern "C" __declspec(dllexport) unsigned int __cdecl KKS_DLSS12_Init(const wcha
 {
     std::lock_guard<std::mutex> lock(g_mutex);
     releaseDevice();
+    g_feature = NVSDK_NGX_Result_FAIL_NotInitialized;
+    std::snprintf(g_capabilityReport, sizeof(g_capabilityReport), "Capabilities not queried");
 
     const wchar_t* path = appDataPath ? appDataPath : L".";
     std::wstring ngxPath(path);
@@ -301,7 +312,8 @@ extern "C" __declspec(dllexport) unsigned int __cdecl KKS_DLSS12_Init(const wcha
 
     using InitFn = NVSDK_NGX_Result (NVSDK_CONV *)(const char*, NVSDK_NGX_EngineType, const char*, const wchar_t*, ID3D12Device*, const NVSDK_NGX_FeatureCommonInfo*, NVSDK_NGX_Version);
     auto initProject = resolve<InitFn>("NVSDK_NGX_D3D12_Init_ProjectID");
-    using StandardInitFn = NVSDK_NGX_Result (NVSDK_CONV *)(unsigned long long, const wchar_t*, ID3D12Device*, const NVSDK_NGX_FeatureCommonInfo*, NVSDK_NGX_Version);
+    // GetProcAddress resolves the snippet DLL ABI, not the SDK static wrapper.
+    using StandardInitFn = NVSDK_NGX_Result (NVSDK_CONV *)(unsigned long long, const wchar_t*, ID3D12Device*, NVSDK_NGX_Version);
     auto initStandard = resolve<StandardInitFn>("NVSDK_NGX_D3D12_Init");
     if (!initProject && !initStandard)
     {
@@ -328,7 +340,7 @@ extern "C" __declspec(dllexport) unsigned int __cdecl KKS_DLSS12_Init(const wcha
             CreateDirectoryW(candidate.c_str(), nullptr);
             for (unsigned long long appId : appIds)
             {
-                g_last = guarded([&]() { return initStandard(appId, candidate.c_str(), g_device, nullptr, NVSDK_NGX_Version_API); });
+                g_last = guarded([&]() { return initStandard(appId, candidate.c_str(), g_device, NVSDK_NGX_Version_API); });
                 if (g_last == NVSDK_NGX_Result_Success)
                 {
                     g_appId = appId;
@@ -374,6 +386,19 @@ extern "C" __declspec(dllexport) unsigned int __cdecl KKS_DLSS12_LastFeatureResu
 {
     std::lock_guard<std::mutex> lock(g_mutex);
     return static_cast<unsigned int>(g_feature);
+}
+
+// Isolated creation test only; never evaluates or presents a synthetic frame.
+extern "C" __declspec(dllexport) unsigned int __cdecl KKS_DLSS12_ProbeFeature()
+{
+    std::lock_guard<std::mutex> lock(g_mutex);
+    if (g_last == NVSDK_NGX_Result_Success) createTestFeature();
+    return static_cast<unsigned int>(g_feature);
+}
+
+extern "C" __declspec(dllexport) const char* __cdecl KKS_DLSS12_CapabilityReport()
+{
+    return g_capabilityReport;
 }
 
 extern "C" __declspec(dllexport) unsigned int __cdecl KKS_DLSS12_AttachD3D11(void* device, void* context)

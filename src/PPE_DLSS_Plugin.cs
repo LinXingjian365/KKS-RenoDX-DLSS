@@ -117,7 +117,9 @@ namespace PPE_DLSS
             if (!ShowUI.Value) return;
             string status = _dlssComponent != null && _dlssComponent.IsActive
                 ? $"DLSS ON | {_dlssComponent.RenderWidth}x{_dlssComponent.RenderHeight} -> {Screen.width}x{Screen.height}"
-                : $"DLSS {_status} (Ctrl+D to enable)";
+                : _dlssComponent != null && _dlssComponent.IsCapturing
+                    ? "DLSS INPUT CAPTURE ONLY | No DLSS output (Ctrl+D to stop)"
+                    : $"DLSS {_status} (Ctrl+D to enable)";
             GUI.color = _dlssComponent != null && _dlssComponent.IsActive ? Color.green : Color.yellow;
             GUI.Label(new Rect(10, 10, 400, 20), status);
             GUI.color = Color.white;
@@ -148,7 +150,8 @@ namespace PPE_DLSS
 
         public int RenderWidth => _dlss?.RenderWidth ?? 0;
         public int RenderHeight => _dlss?.RenderHeight ?? 0;
-        public bool IsActive => _initialized && _dlss != null && (_dlss.IsInitialized || _dlss.BridgeActive);
+        public bool IsActive => _initialized && _dlss != null && _dlss.IsInitialized;
+        public bool IsCapturing => _initialized && _dlss != null && _dlss.BridgeActive && !_dlss.IsInitialized;
 
         private void Awake()
         {
@@ -213,6 +216,7 @@ namespace PPE_DLSS
             {
                 if (_dlss.BridgeActive)
                 {
+                    ScalableBufferManager.ResizeBuffers(_originalScale, _originalScale);
                     _initialized = true;
                     PPE_DLSS_Plugin.Log.LogWarning("Native D3D12 bridge is active in input-capture mode; NGX D3D11 feature is not used.");
                     return;

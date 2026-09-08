@@ -28,6 +28,9 @@ namespace PPE_DLSS
         internal static extern uint KKS_DLSS12_LastFeatureResult();
 
         [DllImport(DLL, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern IntPtr KKS_DLSS12_CapabilityReport();
+
+        [DllImport(DLL, CallingConvention = CallingConvention.Cdecl)]
         internal static extern uint KKS_DLSS12_LastAttachCode();
 
         [DllImport(DLL, CallingConvention = CallingConvention.Cdecl)]
@@ -488,6 +491,7 @@ namespace PPE_DLSS
                 {
                     _lastLoggedBridgeFeature = feature;
                     NativeLog($"D3D12 live CreateFeature result=0x{feature:X8}");
+                    NativeLog(Marshal.PtrToStringAnsi(D3D12BridgeNative.KKS_DLSS12_CapabilityReport()) ?? "NGX capability report unavailable");
                 }
                 if (_stageLogCooldown-- <= 0)
                 {
