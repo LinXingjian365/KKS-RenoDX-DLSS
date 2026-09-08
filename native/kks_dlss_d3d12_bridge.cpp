@@ -16,6 +16,7 @@ namespace
     NVSDK_NGX_Result g_feature = NVSDK_NGX_Result_FAIL_NotInitialized;
     unsigned long long g_appId = 0;
     unsigned int g_attachCode = 0;
+    unsigned int g_stageCodes[4]{};
     ID3D12CommandQueue* g_queue = nullptr;
     IDXGIAdapter1* g_adapter12 = nullptr;
     ID3D12CommandAllocator* g_allocator = nullptr;
@@ -179,7 +180,7 @@ namespace
 
     bool ensureSharedSlot(unsigned int slotIndex, ID3D11Texture2D* source)
     {
-        if (slotIndex >= 4 || !source || !g_d3d11 || !g_device) return false;
+        if (slotIndex >= 4 || !source || !g_d3d11 || !g_device) { if (slotIndex < 4) g_stageCodes[slotIndex] = 1; return false; }
         D3D11_TEXTURE2D_DESC sourceDesc{};
         source->GetDesc(&sourceDesc);
         SharedSlot& slot = g_slots[slotIndex];
@@ -193,17 +194,18 @@ namespace
             relayDesc.BindFlags = 0;
             relayDesc.CPUAccessFlags = 0;
             relayDesc.MiscFlags = D3D11_RESOURCE_MISC_SHARED_NTHANDLE;
-            if (FAILED(g_d3d11->CreateTexture2D(&relayDesc, nullptr, &slot.relay11))) return false;
+            if (FAILED(g_d3d11->CreateTexture2D(&relayDesc, nullptr, &slot.relay11))) { g_stageCodes[slotIndex] = 3; return false; }
             IDXGIResource1* dxgiResource = nullptr;
-            if (FAILED(slot.relay11->QueryInterface(IID_PPV_ARGS(&dxgiResource)))) return false;
+            if (FAILED(slot.relay11->QueryInterface(IID_PPV_ARGS(&dxgiResource)))) { g_stageCodes[slotIndex] = 4; return false; }
             HRESULT hr = dxgiResource->CreateSharedHandle(nullptr, GENERIC_ALL, nullptr, &slot.handle);
             dxgiResource->Release();
-            if (FAILED(hr) || !slot.handle) return false;
-            if (FAILED(g_device->OpenSharedHandle(slot.handle, IID_PPV_ARGS(&slot.imported12)))) return false;
+            if (FAILED(hr) || !slot.handle) { g_stageCodes[slotIndex] = 5; return false; }
+            if (FAILED(g_device->OpenSharedHandle(slot.handle, IID_PPV_ARGS(&slot.imported12)))) { g_stageCodes[slotIndex] = 6; return false; }
             slot.desc = sourceDesc;
         }
         g_d3d11Context->CopyResource(slot.relay11, source);
         g_d3d11Context->Flush();
+        g_stageCodes[slotIndex] = 8;
         return true;
     }
 }
@@ -380,13 +382,19 @@ extern "C" __declspec(dllexport) unsigned int __cdecl KKS_DLSS12_LastAttachCode(
 extern "C" __declspec(dllexport) unsigned int __cdecl KKS_DLSS12_StageD3D11Texture(unsigned int slot, void* resource)
 {
     std::lock_guard<std::mutex> lock(g_mutex);
-    if (!g_d3d11 || !g_d3d11Context || slot >= 4 || !resource) return 0;
+    if (!g_d3d11 || !g_d3d11Context || slot >= 4 || !resource) { if (slot < 4) g_stageCodes[slot] = 1; return 0; }
     ID3D11Texture2D* source = nullptr;
     ID3D11Resource* sourceResource = reinterpret_cast<ID3D11Resource*>(resource);
-    if (FAILED(sourceResource->QueryInterface(IID_PPV_ARGS(&source)))) return 0;
+    if (FAILED(sourceResource->QueryInterface(IID_PPV_ARGS(&source)))) { g_stageCodes[slot] = 2; return 0; }
     bool ok = ensureSharedSlot(slot, source);
     source->Release();
     return ok ? 1u : 0u;
+}
+
+extern "C" __declspec(dllexport) unsigned int __cdecl KKS_DLSS12_LastStageCode(unsigned int slot)
+{
+    std::lock_guard<std::mutex> lock(g_mutex);
+    return slot < 4 ? g_stageCodes[slot] : 1u;
 }
 
 extern "C" __declspec(dllexport) void* __cdecl KKS_DLSS12_GetD3D12Texture(unsigned int slot)

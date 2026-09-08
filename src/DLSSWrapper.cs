@@ -31,6 +31,9 @@ namespace PPE_DLSS
         internal static extern uint KKS_DLSS12_LastAttachCode();
 
         [DllImport(DLL, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern uint KKS_DLSS12_LastStageCode(uint slot);
+
+        [DllImport(DLL, CallingConvention = CallingConvention.Cdecl)]
         internal static extern void KKS_DLSS12_Shutdown();
     }
 
@@ -65,6 +68,7 @@ namespace PPE_DLSS
         private IntPtr _d3dDevice;
         private IntPtr _d3dContext;
         private bool _bridgeActive;
+        private int _stageLogCooldown;
 
         public int RenderWidth { get; private set; }
         public int RenderHeight { get; private set; }
@@ -311,11 +315,11 @@ namespace PPE_DLSS
             }
         }
 
-        public bool Evaluate(float frameTimeMs, Texture sceneDepth, Texture sceneMotionVectors)
+        public bool Evaluate(float frameTimeMs, Texture sceneColor, Texture sceneDepth, Texture sceneMotionVectors)
         {
             if (!_initialized)
             {
-                StageBridgeInputs(sceneDepth, sceneMotionVectors);
+                StageBridgeInputs(sceneColor, sceneDepth, sceneMotionVectors);
                 return false;
             }
 
@@ -327,7 +331,7 @@ namespace PPE_DLSS
                     // proof-of-concept passed an empty depth RT and a zeroed MV RT.
                     IntPtr depthPtr = sceneDepth != null ? sceneDepth.GetNativeTexturePtr() : IntPtr.Zero;
                     IntPtr motionPtr = sceneMotionVectors != null ? sceneMotionVectors.GetNativeTexturePtr() : IntPtr.Zero;
-                    StageBridgeInputs(sceneDepth, sceneMotionVectors);
+                    StageBridgeInputs(sceneColor, sceneDepth, sceneMotionVectors);
                     if (depthPtr != IntPtr.Zero)
                         param.SetD3D11Resource("Depth", depthPtr);
                     if (motionPtr != IntPtr.Zero)
@@ -459,17 +463,22 @@ namespace PPE_DLSS
             }
         }
 
-        private void StageBridgeInputs(Texture sceneDepth, Texture sceneMotionVectors)
+        private void StageBridgeInputs(Texture sceneColor, Texture sceneDepth, Texture sceneMotionVectors)
         {
             if (!_bridgeActive) return;
             try
             {
-                IntPtr color = _colorRT != null ? _colorRT.GetNativeTexturePtr() : IntPtr.Zero;
+                IntPtr color = sceneColor != null ? sceneColor.GetNativeTexturePtr() : IntPtr.Zero;
                 IntPtr depth = sceneDepth != null ? sceneDepth.GetNativeTexturePtr() : IntPtr.Zero;
                 IntPtr motion = sceneMotionVectors != null ? sceneMotionVectors.GetNativeTexturePtr() : IntPtr.Zero;
                 if (color != IntPtr.Zero) D3D12BridgeNative.KKS_DLSS12_StageD3D11Texture(0, color);
                 if (depth != IntPtr.Zero) D3D12BridgeNative.KKS_DLSS12_StageD3D11Texture(1, depth);
                 if (motion != IntPtr.Zero) D3D12BridgeNative.KKS_DLSS12_StageD3D11Texture(2, motion);
+                if (_stageLogCooldown-- <= 0)
+                {
+                    _stageLogCooldown = 120;
+                    NativeLog($"D3D12 staging codes: color={D3D12BridgeNative.KKS_DLSS12_LastStageCode(0)}, depth={D3D12BridgeNative.KKS_DLSS12_LastStageCode(1)}, motion={D3D12BridgeNative.KKS_DLSS12_LastStageCode(2)}");
+                }
             }
             catch (Exception e)
             {

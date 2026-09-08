@@ -257,7 +257,7 @@ namespace PPE_DLSS
                         (sceneMotionVectors == null ? "motion-vectors" : ""));
 
                 // Execute DLSS with the live Unity guide resources.
-                bool success = _dlss.Evaluate(frameTime, sceneDepth, sceneMotionVectors);
+                bool success = _dlss.Evaluate(frameTime, source, sceneDepth, sceneMotionVectors);
 
                 if (success)
                 {
