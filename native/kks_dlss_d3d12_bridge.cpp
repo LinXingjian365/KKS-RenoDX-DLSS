@@ -11,7 +11,6 @@
 
 namespace
 {
-    HMODULE g_ngx = nullptr;
     ID3D12Device* g_device = nullptr;
     NVSDK_NGX_Result g_last = NVSDK_NGX_Result_FAIL_NotInitialized;
     NVSDK_NGX_Result g_feature = NVSDK_NGX_Result_FAIL_NotInitialized;
@@ -47,12 +46,6 @@ namespace
     SharedSlot g_slots[4];
     std::mutex g_mutex;
 
-    template <typename T>
-    T resolve(const char* name)
-    {
-        return g_ngx ? reinterpret_cast<T>(GetProcAddress(g_ngx, name)) : nullptr;
-    }
-
     void releaseDevice()
     {
         for (auto& slot : g_slots)
@@ -66,16 +59,14 @@ namespace
         if (g_d3d11) { g_d3d11->Release(); g_d3d11 = nullptr; }
         if (g_handle)
         {
-            using ReleaseFn = NVSDK_NGX_Result (NVSDK_CONV *)(NVSDK_NGX_Handle*);
-            auto release = resolve<ReleaseFn>("NVSDK_NGX_D3D12_ReleaseFeature");
+            auto release = &NVSDK_NGX_D3D12_ReleaseFeature;
             if (release) { __try { release(g_handle); } __except (EXCEPTION_EXECUTE_HANDLER) { } }
             g_handle = nullptr;
         }
         g_featureAttempted = false;
         if (g_params)
         {
-            using DestroyFn = NVSDK_NGX_Result (NVSDK_CONV *)(NVSDK_NGX_Parameter*);
-            auto destroy = resolve<DestroyFn>("NVSDK_NGX_D3D12_DestroyParameters");
+            auto destroy = &NVSDK_NGX_D3D12_DestroyParameters;
             if (destroy) { __try { destroy(g_params); } __except (EXCEPTION_EXECUTE_HANDLER) { } }
             g_params = nullptr;
         }
@@ -91,8 +82,7 @@ namespace
         if (g_adapter12) { g_adapter12->Release(); g_adapter12 = nullptr; }
         if (g_device)
         {
-            using ShutdownFn = NVSDK_NGX_Result (NVSDK_CONV *)(ID3D12Device*);
-            auto shutdown = resolve<ShutdownFn>("NVSDK_NGX_D3D12_Shutdown1");
+            auto shutdown = &NVSDK_NGX_D3D12_Shutdown1;
             if (shutdown)
             {
                 __try { shutdown(g_device); }
@@ -100,11 +90,6 @@ namespace
             }
             g_device->Release();
             g_device = nullptr;
-        }
-        if (g_ngx)
-        {
-            FreeLibrary(g_ngx);
-            g_ngx = nullptr;
         }
     }
 
@@ -127,10 +112,8 @@ namespace
             return g_feature == NVSDK_NGX_Result_Success && g_handle != nullptr;
         g_featureAttempted = true;
 
-        using AllocateFn = NVSDK_NGX_Result (NVSDK_CONV *)(NVSDK_NGX_Parameter**);
-        using CreateFn = NVSDK_NGX_Result (NVSDK_CONV *)(ID3D12GraphicsCommandList*, NVSDK_NGX_Feature, NVSDK_NGX_Parameter*, NVSDK_NGX_Handle**);
-        auto allocate = resolve<AllocateFn>("NVSDK_NGX_D3D12_GetCapabilityParameters");
-        auto create = resolve<CreateFn>("NVSDK_NGX_D3D12_CreateFeature");
+        auto allocate = &NVSDK_NGX_D3D12_GetCapabilityParameters;
+        auto create = &NVSDK_NGX_D3D12_CreateFeature;
         if (!allocate || !create || !g_device) { g_feature = NVSDK_NGX_Result_FAIL_PlatformError; return false; }
 
         D3D12_COMMAND_QUEUE_DESC queueDesc{};
@@ -199,23 +182,27 @@ namespace
         g_params->Set("MotionVectors", sharedInputs ? g_slots[2].imported12 : g_motion);
         g_params->Set("Output", g_output);
 
-        if (sharedInputs)
-        {
-            D3D12_RESOURCE_BARRIER barriers[3]{};
-            ID3D12Resource* inputs[3] = { g_slots[0].imported12, g_slots[1].imported12, g_slots[2].imported12 };
-            for (int i = 0; i < 3; ++i)
-            {
-                barriers[i].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-                barriers[i].Transition.pResource = inputs[i];
-                barriers[i].Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
-                barriers[i].Transition.StateBefore = D3D12_RESOURCE_STATE_COMMON;
-                barriers[i].Transition.StateAfter = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
-            }
-            g_list->ResourceBarrier(3, barriers);
-        }
-
         g_feature = guarded([&]() { return create(g_list, NVSDK_NGX_Feature_SuperSampling, g_params, &g_handle); });
-        return g_feature == NVSDK_NGX_Result_Success && g_handle != nullptr;
+        if (g_feature != NVSDK_NGX_Result_Success || !g_handle) return false;
+        HRESULT hr = g_list->Close();
+        if (SUCCEEDED(hr)) hr = g_device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&g_fence));
+        if (SUCCEEDED(hr)) {
+            g_fenceEvent = CreateEventW(nullptr, FALSE, FALSE, nullptr);
+            if (!g_fenceEvent) hr = HRESULT_FROM_WIN32(GetLastError());
+        }
+        if (SUCCEEDED(hr)) {
+            ID3D12CommandList* lists[] = {g_list};
+            g_queue->ExecuteCommandLists(1, lists);
+            hr = g_queue->Signal(g_fence, ++g_fenceValue);
+        }
+        if (SUCCEEDED(hr)) hr = g_fence->SetEventOnCompletion(g_fenceValue, g_fenceEvent);
+        if (SUCCEEDED(hr) && WaitForSingleObject(g_fenceEvent, 5000) != WAIT_OBJECT_0)
+            hr = HRESULT_FROM_WIN32(ERROR_TIMEOUT);
+        if (FAILED(hr)) {
+            g_feature = NVSDK_NGX_Result_FAIL_PlatformError;
+            return false;
+        }
+        return true;
     }
 
     bool ensureSharedSlot(unsigned int slotIndex, ID3D11Texture2D* source)
@@ -269,17 +256,6 @@ extern "C" __declspec(dllexport) unsigned int __cdecl KKS_DLSS12_Init(const wcha
     std::snprintf(g_capabilityReport, sizeof(g_capabilityReport), "Capabilities not queried");
 
     const wchar_t* path = appDataPath ? appDataPath : L".";
-    std::wstring ngxPath(path);
-    if (!ngxPath.empty() && ngxPath.back() != L'\\') ngxPath += L'\\';
-    ngxPath += L"_nvngx.dll";
-    g_ngx = LoadLibraryW(ngxPath.c_str());
-    if (!g_ngx) g_ngx = LoadLibraryW(L"_nvngx.dll");
-    if (!g_ngx)
-    {
-        g_last = NVSDK_NGX_Result_FAIL_PlatformError;
-        return static_cast<unsigned int>(g_last);
-    }
-
     IDXGIFactory6* factory = nullptr;
     HRESULT hr = CreateDXGIFactory1(IID_PPV_ARGS(&factory));
     if (FAILED(hr))
@@ -310,58 +286,13 @@ extern "C" __declspec(dllexport) unsigned int __cdecl KKS_DLSS12_Init(const wcha
         return static_cast<unsigned int>(g_last);
     }
 
-    using InitFn = NVSDK_NGX_Result (NVSDK_CONV *)(const char*, NVSDK_NGX_EngineType, const char*, const wchar_t*, ID3D12Device*, const NVSDK_NGX_FeatureCommonInfo*, NVSDK_NGX_Version);
-    auto initProject = resolve<InitFn>("NVSDK_NGX_D3D12_Init_ProjectID");
-    // GetProcAddress resolves the snippet DLL ABI, not the SDK static wrapper.
-    using StandardInitFn = NVSDK_NGX_Result (NVSDK_CONV *)(unsigned long long, const wchar_t*, ID3D12Device*, NVSDK_NGX_Version);
-    auto initStandard = resolve<StandardInitFn>("NVSDK_NGX_D3D12_Init");
-    if (!initProject && !initStandard)
-    {
-        g_last = NVSDK_NGX_Result_FAIL_PlatformError;
-        releaseDevice();
-        return static_cast<unsigned int>(g_last);
-    }
-
-    std::vector<std::wstring> dataPaths;
-    dataPaths.emplace_back(path);
-    dataPaths.emplace_back(std::wstring(path) + L"\\host64");
-    wchar_t localAppData[MAX_PATH]{};
-    DWORD localLength = GetEnvironmentVariableW(L"LOCALAPPDATA", localAppData, MAX_PATH);
-    if (localLength > 0 && localLength < MAX_PATH)
-        dataPaths.emplace_back(std::wstring(localAppData) + L"\\KKS-DLSS-NGX");
-
-    // In a game process, the standard path is the least invasive route. Try
-    // writable data locations before the ProjectID entry point.
-    if (initStandard)
-    {
-        const unsigned long long appIds[] = { 0ull, 0x4B4B5353554E5348ull, 0x444C535354455354ull };
-        for (const std::wstring& candidate : dataPaths)
-        {
-            CreateDirectoryW(candidate.c_str(), nullptr);
-            for (unsigned long long appId : appIds)
-            {
-                g_last = guarded([&]() { return initStandard(appId, candidate.c_str(), g_device, NVSDK_NGX_Version_API); });
-                if (g_last == NVSDK_NGX_Result_Success)
-                {
-                    g_appId = appId;
-                    break;
-                }
-            }
-            if (g_last == NVSDK_NGX_Result_Success) break;
-        }
-    }
-
-    if (g_last != NVSDK_NGX_Result_Success && initProject)
-    {
-        g_last = guarded([&]() { return initProject(
-            "6a9c4c0d-6f1c-4c4d-9a70-6f2d0f4f2c19",
-            NVSDK_NGX_ENGINE_TYPE_CUSTOM,
-            "Unity 2019.4.9f1 KKS CharaStudio",
-            dataPaths.back().c_str(),
-            g_device,
-            nullptr,
-            NVSDK_NGX_Version_API); });
-    }
+    const wchar_t* runtimePaths[] = {path};
+    NVSDK_NGX_FeatureCommonInfo info{};
+    info.PathListInfo.Path = runtimePaths;
+    info.PathListInfo.Length = 1;
+    g_last = guarded([&]() { return NVSDK_NGX_D3D12_Init_with_ProjectID(
+        "6a9c4c0d-6f1c-4c4d-9a70-6f2d0f4f2c19", NVSDK_NGX_ENGINE_TYPE_CUSTOM,
+        "1.0", path, g_device, &info, NVSDK_NGX_Version_API); });
 
     if (g_last != NVSDK_NGX_Result_Success)
         releaseDevice();

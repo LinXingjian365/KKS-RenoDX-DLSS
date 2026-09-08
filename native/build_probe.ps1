@@ -5,7 +5,9 @@ cmd /c "call `"$vs`" && cl /nologo /EHsc /std:c++17 /I`"$PSScriptRoot\third_part
 
 $bridgeSrc = Join-Path $PSScriptRoot 'kks_dlss_d3d12_bridge.cpp'
 $bridgeOut = Join-Path $PSScriptRoot 'kks_dlss_d3d12_bridge.dll'
-cmd /c "call `"$vs`" && cl /nologo /LD /EHsc /std:c++17 /I`"$PSScriptRoot\third_party\DLSS\include`" `"$bridgeSrc`" /Fe:`"$bridgeOut`" d3d12.lib dxgi.lib"
+$sdkLib = Join-Path $PSScriptRoot 'third_party\DLSS\lib\Windows_x86_64\x64\nvsdk_ngx_d.lib'
+cmd /c "call `"$vs`" && cl /nologo /MD /LD /EHsc /std:c++17 /I`"$PSScriptRoot\third_party\DLSS\include`" `"$bridgeSrc`" /Fe:`"$bridgeOut`" `"$sdkLib`" d3d12.lib dxgi.lib advapi32.lib user32.lib"
+if ($LASTEXITCODE -ne 0) { throw 'Native bridge build failed' }
 
 $bridgeProbeSrc = Join-Path $PSScriptRoot 'bridge_probe.cpp'
 $bridgeProbeOut = Join-Path $PSScriptRoot 'bridge_probe.exe'

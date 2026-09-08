@@ -47,3 +47,29 @@ Next investigation: resolve how the loaded NGX core discovers and initializes
 the SuperSampling runtime, using loader evidence and a supported SDK init path.
 
 Reference: https://github.com/NVIDIA/DLSS/blob/main/include/nvsdk_ngx_helpers.h
+
+## Resolved: SDK loader versus direct core exports
+
+The new `sdk_probe.cpp` links NVIDIA's supplied `nvsdk_ngx_d.lib`, calls the
+SDK's Init_with_ProjectID with an explicit runtime search path, then queries
+capabilities and creates SuperSampling. With exactly the existing game-root
+runtime it reports:
+
+```text
+SDK init=0x00000001
+capabilities=0x00000001 available=1 featureInit=0x00000001
+SDK CreateFeature=0x00000001
+```
+
+The production bridge now uses the SDK for init, capability queries, creation,
+parameter destruction, feature release and shutdown. Its independent probe
+also returns success, including command submission and fence completion for
+creation. Removing direct core export calls and providing the runtime search
+path together resolves the observed FeatureNotFound; this test does not isolate
+which internal SDK loader action was missing.
+
+No driver or game runtime DLL replacement was necessary. The discovered old
+plugin-directory runtime has not been deleted or declared the proven cause.
+The standalone SDK probe tests creation only; the bridge probe additionally
+submits creation commands and waits. Neither proves frame evaluation or output
+copy-back. KKS pixel, synchronization and temporal quality tests remain pending.
