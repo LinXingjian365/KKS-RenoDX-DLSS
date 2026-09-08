@@ -72,6 +72,7 @@ namespace PPE_DLSS
         private IntPtr _d3dContext;
         private bool _bridgeActive;
         private int _stageLogCooldown;
+        private uint _lastLoggedBridgeFeature;
 
         public int RenderWidth { get; private set; }
         public int RenderHeight { get; private set; }
@@ -118,6 +119,11 @@ namespace PPE_DLSS
                 Debug.Log($"[DLSS] Got D3D11 context: 0x{_d3dContext.ToInt64():X}");
 
                 TryStartD3D12Bridge();
+
+                // The native bridge owns its D3D12 NGX session. Do not continue
+                // into the incompatible KKS D3D11 NGX initialization path.
+                if (_bridgeActive)
+                    return false;
 
                 // Step 2: Verify DLL works
                 try
@@ -477,6 +483,12 @@ namespace PPE_DLSS
                 if (color != IntPtr.Zero) D3D12BridgeNative.KKS_DLSS12_StageD3D11Texture(0, color);
                 if (depth != IntPtr.Zero) D3D12BridgeNative.KKS_DLSS12_StageD3D11Texture(1, depth);
                 if (motion != IntPtr.Zero) D3D12BridgeNative.KKS_DLSS12_StageD3D11Texture(2, motion);
+                uint feature = D3D12BridgeNative.KKS_DLSS12_LastFeatureResult();
+                if (feature != _lastLoggedBridgeFeature)
+                {
+                    _lastLoggedBridgeFeature = feature;
+                    NativeLog($"D3D12 live CreateFeature result=0x{feature:X8}");
+                }
                 if (_stageLogCooldown-- <= 0)
                 {
                     _stageLogCooldown = 120;

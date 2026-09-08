@@ -148,7 +148,7 @@ namespace PPE_DLSS
 
         public int RenderWidth => _dlss?.RenderWidth ?? 0;
         public int RenderHeight => _dlss?.RenderHeight ?? 0;
-        public bool IsActive => _initialized && _dlss != null && _dlss.IsInitialized;
+        public bool IsActive => _initialized && _dlss != null && (_dlss.IsInitialized || _dlss.BridgeActive);
 
         private void Awake()
         {
