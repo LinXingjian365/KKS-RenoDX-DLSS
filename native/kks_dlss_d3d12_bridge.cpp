@@ -191,10 +191,14 @@ namespace
             if (slot.handle) { CloseHandle(slot.handle); slot.handle = nullptr; }
             if (slot.relay11) { slot.relay11->Release(); slot.relay11 = nullptr; }
             D3D11_TEXTURE2D_DESC relayDesc = sourceDesc;
+            relayDesc.MipLevels = 1;
+            relayDesc.ArraySize = 1;
+            relayDesc.Usage = D3D11_USAGE_DEFAULT;
             relayDesc.BindFlags = 0;
             relayDesc.CPUAccessFlags = 0;
             relayDesc.MiscFlags = D3D11_RESOURCE_MISC_SHARED_NTHANDLE;
-            if (FAILED(g_d3d11->CreateTexture2D(&relayDesc, nullptr, &slot.relay11))) { g_stageCodes[slotIndex] = 3; return false; }
+            HRESULT createHr = g_d3d11->CreateTexture2D(&relayDesc, nullptr, &slot.relay11);
+            if (FAILED(createHr)) { g_stageCodes[slotIndex] = 30000000u | (static_cast<unsigned int>(createHr) & 0xFFFFu); return false; }
             IDXGIResource1* dxgiResource = nullptr;
             if (FAILED(slot.relay11->QueryInterface(IID_PPV_ARGS(&dxgiResource)))) { g_stageCodes[slotIndex] = 4; return false; }
             HRESULT hr = dxgiResource->CreateSharedHandle(nullptr, GENERIC_ALL, nullptr, &slot.handle);
