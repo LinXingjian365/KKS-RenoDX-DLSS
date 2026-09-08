@@ -18,6 +18,8 @@ The bridge now also allocates a D3D12 queue/list and attempts a SuperSampling fe
 
 The native bridge now has adapter-matched D3D11 attachment and shared NT-handle staging APIs. They copy a live D3D11 resource into a relay texture, flush the KKS context, and open the same allocation as an ID3D12Resource. This isolates the transport layer before wiring NGX evaluate and avoids pretending the current dummy-resource feature probe is production-ready.
 
+The first in-game staging run reached the intended transport milestone: KKS reported `attach=8` and `color=8, depth=8, motion=8`, with zero staging HRESULTs. The previous `0xBAD0000B` feature value was stale because the bridge attempted feature creation during `Init`, before any live resources existed. Feature creation is now deferred until all three live relays are staged. The next acceptance point is the live-resource `CreateFeature` result, followed by synchronized D3D12 evaluation and output copy-back.
+
 ### Failed native approaches
 
 1. **BepInEx `PPE_DLSS.dll`**: camera discovery and managed initialization worked, but KKS did not provide the color/depth/motion-vector contract and command-queue ownership required by NGX. No reliable native `CreateFeature`/`EvaluateFeature` pair was produced.

@@ -1,5 +1,11 @@
 # Changelog
 
+## v2.5.1 - 2026-09-08
+
+- Deferred native D3D12 DLSS feature creation until live KKS color, depth, and motion-vector relay textures are staged.
+- Recorded the verified in-game adapter attach and three-resource staging result.
+- Prevented the old dummy-resource `0xBAD0000B` result from being reported as the live feature result.
+
 ## v2.4.3
 
 - Replaced the minimal debug note with the complete native-DLSS failure ledger.

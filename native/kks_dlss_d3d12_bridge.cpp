@@ -22,6 +22,9 @@ namespace
     IDXGIAdapter1* g_adapter12 = nullptr;
     ID3D12CommandAllocator* g_allocator = nullptr;
     ID3D12GraphicsCommandList* g_list = nullptr;
+    ID3D12Fence* g_fence = nullptr;
+    HANDLE g_fenceEvent = nullptr;
+    unsigned long long g_fenceValue = 0;
     NVSDK_NGX_Parameter* g_params = nullptr;
     NVSDK_NGX_Handle* g_handle = nullptr;
     ID3D12Resource* g_color = nullptr;
@@ -77,6 +80,8 @@ namespace
         if (g_depth) { g_depth->Release(); g_depth = nullptr; }
         if (g_color) { g_color->Release(); g_color = nullptr; }
         if (g_list) { g_list->Release(); g_list = nullptr; }
+        if (g_fenceEvent) { CloseHandle(g_fenceEvent); g_fenceEvent = nullptr; }
+        if (g_fence) { g_fence->Release(); g_fence = nullptr; }
         if (g_allocator) { g_allocator->Release(); g_allocator = nullptr; }
         if (g_queue) { g_queue->Release(); g_queue = nullptr; }
         if (g_adapter12) { g_adapter12->Release(); g_adapter12 = nullptr; }
@@ -129,8 +134,9 @@ namespace
         g_feature = guarded([&]() { return allocate(&g_params); });
         if (g_feature != NVSDK_NGX_Result_Success || !g_params) return false;
 
-        const UINT width = 1280;
-        const UINT height = 720;
+        const bool sharedInputs = g_slots[0].imported12 && g_slots[1].imported12 && g_slots[2].imported12;
+        const UINT width = sharedInputs ? g_slots[0].desc.Width : 1280;
+        const UINT height = sharedInputs ? g_slots[0].desc.Height : 720;
         auto makeTexture = [&](DXGI_FORMAT format, D3D12_RESOURCE_FLAGS flags, D3D12_RESOURCE_STATES state, ID3D12Resource** result)
         {
             D3D12_HEAP_PROPERTIES heap{};
@@ -147,9 +153,9 @@ namespace
             desc.Flags = flags;
             return g_device->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &desc, state, nullptr, IID_PPV_ARGS(result));
         };
-        if (FAILED(makeTexture(DXGI_FORMAT_R8G8B8A8_UNORM, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, &g_color)) ||
-            FAILED(makeTexture(DXGI_FORMAT_R32_FLOAT, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, &g_depth)) ||
-            FAILED(makeTexture(DXGI_FORMAT_R16G16_FLOAT, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, &g_motion)) ||
+        if ((!sharedInputs && FAILED(makeTexture(DXGI_FORMAT_R8G8B8A8_UNORM, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, &g_color))) ||
+            (!sharedInputs && FAILED(makeTexture(DXGI_FORMAT_R32_FLOAT, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, &g_depth))) ||
+            (!sharedInputs && FAILED(makeTexture(DXGI_FORMAT_R16G16_FLOAT, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, &g_motion))) ||
             FAILED(makeTexture(DXGI_FORMAT_R8G8B8A8_UNORM, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, &g_output)))
         {
             g_feature = NVSDK_NGX_Result_FAIL_PlatformError;
@@ -170,9 +176,9 @@ namespace
         g_params->Set("Jitter.Offset.Y", 0.0f);
         g_params->Set("MV.Scale.X", 1.0f);
         g_params->Set("MV.Scale.Y", 1.0f);
-        g_params->Set("Color", g_color);
-        g_params->Set("Depth", g_depth);
-        g_params->Set("MotionVectors", g_motion);
+        g_params->Set("Color", sharedInputs ? g_slots[0].imported12 : g_color);
+        g_params->Set("Depth", sharedInputs ? g_slots[1].imported12 : g_depth);
+        g_params->Set("MotionVectors", sharedInputs ? g_slots[2].imported12 : g_motion);
         g_params->Set("Output", g_output);
 
         g_feature = guarded([&]() { return create(g_list, NVSDK_NGX_Feature_SuperSampling, g_params, &g_handle); });
@@ -216,6 +222,8 @@ namespace
             g_d3d11Context->CopyResource(slot.relay11, source);
         g_d3d11Context->Flush();
         g_stageCodes[slotIndex] = 8;
+        if (!g_handle && g_slots[0].imported12 && g_slots[1].imported12 && g_slots[2].imported12)
+            createTestFeature();
         return true;
     }
 }
@@ -321,8 +329,8 @@ extern "C" __declspec(dllexport) unsigned int __cdecl KKS_DLSS12_Init(const wcha
 
     if (g_last != NVSDK_NGX_Result_Success)
         releaseDevice();
-    else
-        createTestFeature();
+    // Feature creation is intentionally deferred until the live D3D11 color,
+    // depth, and motion-vector relays have all been staged.
     return static_cast<unsigned int>(g_last);
 }
 
