@@ -199,7 +199,7 @@ namespace
             relayDesc.CPUAccessFlags = 0;
             relayDesc.SampleDesc.Count = 1;
             relayDesc.SampleDesc.Quality = 0;
-            relayDesc.MiscFlags = D3D11_RESOURCE_MISC_SHARED_NTHANDLE;
+            relayDesc.MiscFlags = D3D11_RESOURCE_MISC_SHARED_NTHANDLE | D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX;
             HRESULT createHr = g_d3d11->CreateTexture2D(&relayDesc, nullptr, &slot.relay11);
             if (FAILED(createHr)) { g_stageHresults[slotIndex] = createHr; g_stageCodes[slotIndex] = 3; return false; }
             IDXGIResource1* dxgiResource = nullptr;
