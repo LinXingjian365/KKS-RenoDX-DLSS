@@ -91,14 +91,18 @@ namespace PPE_DLSS
             var cam = Camera.main;
             if (cam == null)
             {
+                // BackCamera exists during Studio bootstrap but carries a
+                // black/utility render target. Do not attach DLSS to it just
+                // because it is the only camera visible for a few frames;
+                // wait for the tagged or explicitly named final camera.
                 Camera[] cams = Camera.allCameras;
-                float maxDepth = float.MinValue;
                 foreach (var c in cams)
                 {
-                    if (c.depth > maxDepth && c.targetTexture == null)
+                    if (c != null && c.isActiveAndEnabled && c.targetTexture == null &&
+                        string.Equals(c.name, "Main Camera", StringComparison.OrdinalIgnoreCase))
                     {
-                        maxDepth = c.depth;
                         cam = c;
+                        break;
                     }
                 }
             }
