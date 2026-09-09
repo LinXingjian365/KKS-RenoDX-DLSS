@@ -171,6 +171,7 @@ namespace PPE_DLSS
         private bool _outputReady;
         private bool _outputValidationDone;
         private bool _inputValidationDone;
+        private int _guideWarningCooldown;
         private bool _nativeOutputUsable = true;
         private RenderTexture _outputProbeRT;
         private Texture2D _outputProbeTexture;
@@ -325,10 +326,13 @@ namespace PPE_DLSS
                 Texture sceneDepth = _guides?.DepthTexture ?? Shader.GetGlobalTexture("_CameraDepthTexture");
                 Texture sceneMotionVectors = _guides?.MotionTexture ?? Shader.GetGlobalTexture("_CameraMotionVectorsTexture");
 
-                if (sceneDepth == null || sceneMotionVectors == null)
+                if ((sceneDepth == null || sceneMotionVectors == null) && _guideWarningCooldown-- <= 0)
+                {
+                    _guideWarningCooldown = 120;
                     PPE_DLSS_Plugin.Log.LogWarning("Native DLSS guide missing: " +
                         (sceneDepth == null ? "depth " : "") +
                         (sceneMotionVectors == null ? "motion-vectors" : ""));
+                }
 
                 // Execute DLSS with the live Unity guide resources.
                 bool success = _dlss.Evaluate(frameTime, source, sceneDepth, sceneMotionVectors);

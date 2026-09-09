@@ -52,6 +52,12 @@ namespace PPE_DLSS
         internal static extern double KKS_DLSS12_LastEvalMilliseconds();
 
         [DllImport(DLL, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern ulong KKS_DLSS12_PrivateCopyCount();
+
+        [DllImport(DLL, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern ulong KKS_DLSS12_PrivateCopyFailures();
+
+        [DllImport(DLL, CallingConvention = CallingConvention.Cdecl)]
         internal static extern void KKS_DLSS12_Shutdown();
     }
 
@@ -89,6 +95,7 @@ namespace PPE_DLSS
         private int _stageLogCooldown;
         private uint _lastLoggedBridgeFeature;
         private int _bridgeEvalLogCooldown;
+        private int _bridgeFailureLogCooldown;
 
         public int RenderWidth { get; private set; }
         public int RenderHeight { get; private set; }
@@ -371,15 +378,28 @@ namespace PPE_DLSS
                 StageBridgeInputs(bridgeColor, sceneDepth, sceneMotionVectors);
                 StageBridgeOutput(_outputRT);
                 uint eval = D3D12BridgeNative.KKS_DLSS12_ProbeEvaluate();
-                if (eval != 1 || _bridgeEvalLogCooldown-- <= 0)
+                bool periodicEvalLog = false;
+                if (eval != 1)
+                {
+                    // Keep failure evidence, but avoid flooding the log once
+                    // per render frame when a guide or relay is temporarily
+                    // unavailable.
+                    if (_bridgeFailureLogCooldown-- <= 0)
+                    {
+                        _bridgeFailureLogCooldown = 120;
+                        NativeLog($"D3D12 Evaluate=failed, outputStage={D3D12BridgeNative.KKS_DLSS12_LastStageCode(3)}(0x{D3D12BridgeNative.KKS_DLSS12_LastStageHRESULT(3):X8}), gpuWaitMs={D3D12BridgeNative.KKS_DLSS12_LastEvalMilliseconds():F2}, evalFrames={D3D12BridgeNative.KKS_DLSS12_EvalCount()}, privateCopies={D3D12BridgeNative.KKS_DLSS12_PrivateCopyCount()}, privateCopyFailures={D3D12BridgeNative.KKS_DLSS12_PrivateCopyFailures()}");
+                    }
+                }
+                else if (_bridgeEvalLogCooldown-- <= 0)
                 {
                     _bridgeEvalLogCooldown = 600;
-                    NativeLog($"D3D12 Evaluate={(eval == 1 ? "success" : "failed")}, outputStage={D3D12BridgeNative.KKS_DLSS12_LastStageCode(3)}(0x{D3D12BridgeNative.KKS_DLSS12_LastStageHRESULT(3):X8}), gpuWaitMs={D3D12BridgeNative.KKS_DLSS12_LastEvalMilliseconds():F2}, evalFrames={D3D12BridgeNative.KKS_DLSS12_EvalCount()}");
+                    periodicEvalLog = true;
+                    NativeLog($"D3D12 Evaluate=success, outputStage={D3D12BridgeNative.KKS_DLSS12_LastStageCode(3)}(0x{D3D12BridgeNative.KKS_DLSS12_LastStageHRESULT(3):X8}), gpuWaitMs={D3D12BridgeNative.KKS_DLSS12_LastEvalMilliseconds():F2}, evalFrames={D3D12BridgeNative.KKS_DLSS12_EvalCount()}, privateCopies={D3D12BridgeNative.KKS_DLSS12_PrivateCopyCount()}, privateCopyFailures={D3D12BridgeNative.KKS_DLSS12_PrivateCopyFailures()}");
                 }
                 if (eval == 1)
                 {
                     uint copy = D3D12BridgeNative.KKS_DLSS12_CopyOutputToD3D11(_outputRT.GetNativeTexturePtr());
-                    if (copy != 1 || _bridgeEvalLogCooldown == 600)
+                    if (copy != 1 || periodicEvalLog)
                         NativeLog($"D3D12 output copy-back={(copy == 1 ? "success" : "failed")}");
                     if (copy == 1)
                         return true;
