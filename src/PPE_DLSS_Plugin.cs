@@ -170,6 +170,7 @@ namespace PPE_DLSS
         private int _outputWarmupFrames;
         private bool _outputReady;
         private bool _outputValidationDone;
+        private bool _inputValidationDone;
         private bool _nativeOutputUsable = true;
         private RenderTexture _outputProbeRT;
         private Texture2D _outputProbeTexture;
@@ -200,6 +201,7 @@ namespace PPE_DLSS
             _outputWarmupFrames = OutputWarmupEvaluations;
             _outputReady = false;
             _outputValidationDone = false;
+            _inputValidationDone = false;
             _nativeOutputUsable = true;
             _renderEntryLogged = false;
             _lastFrameTime = Time.realtimeSinceStartup;
@@ -271,6 +273,7 @@ namespace PPE_DLSS
             _outputWarmupFrames = OutputWarmupEvaluations;
             _outputReady = false;
             _outputValidationDone = false;
+            _inputValidationDone = false;
             _nativeOutputUsable = true;
             PPE_DLSS_Plugin.Log.LogInfo("DLSS init successful!");
         }
@@ -309,6 +312,12 @@ namespace PPE_DLSS
                 if (colorRT != null)
                 {
                     Graphics.Blit(source, colorRT);
+                    if (!_inputValidationDone)
+                    {
+                        _inputValidationDone = true;
+                        float inputMax = SampleTexture(colorRT);
+                        PPE_DLSS_Plugin.Log.LogInfo($"DLSS input color validation: maxChannel={inputMax:F5}");
+                    }
                 }
 
                 // Unity exposes these camera resources after depthTextureMode is enabled.
@@ -400,33 +409,7 @@ namespace PPE_DLSS
                     return;
                 }
 
-                if (_outputProbeRT == null || !_outputProbeRT.IsCreated())
-                {
-                    if (_outputProbeRT != null) UnityEngine.Object.Destroy(_outputProbeRT);
-                    if (_outputProbeTexture != null) UnityEngine.Object.Destroy(_outputProbeTexture);
-                    _outputProbeRT = new RenderTexture(4, 4, 0, RenderTextureFormat.ARGB32)
-                    {
-                        name = "KKS_DLSS_OutputProbe",
-                        filterMode = FilterMode.Bilinear,
-                        wrapMode = TextureWrapMode.Clamp
-                    };
-                    _outputProbeRT.Create();
-                    _outputProbeTexture = new Texture2D(4, 4, TextureFormat.RGBA32, false, true);
-                }
-
-                Graphics.Blit(output, _outputProbeRT);
-                var previous = RenderTexture.active;
-                RenderTexture.active = _outputProbeRT;
-                _outputProbeTexture.ReadPixels(new Rect(0, 0, 4, 4), 0, 0, false);
-                _outputProbeTexture.Apply(false, false);
-                RenderTexture.active = previous;
-
-                float maxChannel = 0f;
-                var pixels = _outputProbeTexture.GetPixels();
-                for (int i = 0; i < pixels.Length; i++)
-                {
-                    maxChannel = Mathf.Max(maxChannel, pixels[i].r, pixels[i].g, pixels[i].b);
-                }
+                float maxChannel = SampleTexture(output);
                 _nativeOutputUsable = maxChannel > 0.0001f;
                 PPE_DLSS_Plugin.Log.LogInfo($"DLSS output validation: maxChannel={maxChannel:F5}, usable={_nativeOutputUsable}");
                 if (!_nativeOutputUsable)
@@ -439,6 +422,37 @@ namespace PPE_DLSS
                 _nativeOutputUsable = true;
                 PPE_DLSS_Plugin.Log.LogWarning($"DLSS output validation unavailable: {e.Message}");
             }
+        }
+
+        private float SampleTexture(RenderTexture texture)
+        {
+            if (texture == null || !texture.IsCreated()) return 0f;
+            if (_outputProbeRT == null || !_outputProbeRT.IsCreated())
+            {
+                if (_outputProbeRT != null) UnityEngine.Object.Destroy(_outputProbeRT);
+                if (_outputProbeTexture != null) UnityEngine.Object.Destroy(_outputProbeTexture);
+                _outputProbeRT = new RenderTexture(4, 4, 0, RenderTextureFormat.ARGB32)
+                {
+                    name = "KKS_DLSS_OutputProbe",
+                    filterMode = FilterMode.Bilinear,
+                    wrapMode = TextureWrapMode.Clamp
+                };
+                _outputProbeRT.Create();
+                _outputProbeTexture = new Texture2D(4, 4, TextureFormat.RGBA32, false, true);
+            }
+
+            Graphics.Blit(texture, _outputProbeRT);
+            var previous = RenderTexture.active;
+            RenderTexture.active = _outputProbeRT;
+            _outputProbeTexture.ReadPixels(new Rect(0, 0, 4, 4), 0, 0, false);
+            _outputProbeTexture.Apply(false, false);
+            RenderTexture.active = previous;
+
+            float maxChannel = 0f;
+            var pixels = _outputProbeTexture.GetPixels();
+            for (int i = 0; i < pixels.Length; i++)
+                maxChannel = Mathf.Max(maxChannel, pixels[i].r, pixels[i].g, pixels[i].b);
+            return maxChannel;
         }
 
         private void OnDestroy()
