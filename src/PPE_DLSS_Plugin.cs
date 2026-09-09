@@ -169,6 +169,10 @@ namespace PPE_DLSS
         private bool _renderEntryLogged;
         private int _outputWarmupFrames;
         private bool _outputReady;
+        private bool _outputValidationDone;
+        private bool _nativeOutputUsable = true;
+        private RenderTexture _outputProbeRT;
+        private Texture2D _outputProbeTexture;
 
         // The first few Evaluate calls after feature creation initialize NGX's
         // temporal history. Presenting that relay immediately can expose an
@@ -195,6 +199,8 @@ namespace PPE_DLSS
         {
             _outputWarmupFrames = OutputWarmupEvaluations;
             _outputReady = false;
+            _outputValidationDone = false;
+            _nativeOutputUsable = true;
             _renderEntryLogged = false;
             _lastFrameTime = Time.realtimeSinceStartup;
             if (_cam != null)
@@ -264,6 +270,8 @@ namespace PPE_DLSS
             _initialized = true;
             _outputWarmupFrames = OutputWarmupEvaluations;
             _outputReady = false;
+            _outputValidationDone = false;
+            _nativeOutputUsable = true;
             PPE_DLSS_Plugin.Log.LogInfo("DLSS init successful!");
         }
 
@@ -332,6 +340,19 @@ namespace PPE_DLSS
                             _outputReady = true;
                             PPE_DLSS_Plugin.Log.LogInfo("DLSS output relay warmed up; presenting native output");
                         }
+                        if (!_outputValidationDone)
+                        {
+                            ValidateNativeOutput(outputRT);
+                        }
+                        if (!_nativeOutputUsable)
+                        {
+                            // A successful NGX return only proves that the
+                            // command completed. If the relay contains no
+                            // non-zero pixels, keep the camera visible rather
+                            // than presenting an all-black target.
+                            Graphics.Blit(source, destination);
+                            return;
+                        }
                         Graphics.Blit(outputRT, destination);
                     }
                     else
@@ -361,6 +382,63 @@ namespace PPE_DLSS
             _initialized = false;
             _dlss?.Dispose();
             _dlss = null;
+            if (_outputProbeTexture != null) UnityEngine.Object.Destroy(_outputProbeTexture);
+            if (_outputProbeRT != null) UnityEngine.Object.Destroy(_outputProbeRT);
+            _outputProbeTexture = null;
+            _outputProbeRT = null;
+        }
+
+        private void ValidateNativeOutput(RenderTexture output)
+        {
+            _outputValidationDone = true;
+            try
+            {
+                if (output == null || !output.IsCreated())
+                {
+                    _nativeOutputUsable = false;
+                    PPE_DLSS_Plugin.Log.LogWarning("DLSS output validation skipped: output texture is not created");
+                    return;
+                }
+
+                if (_outputProbeRT == null || !_outputProbeRT.IsCreated())
+                {
+                    if (_outputProbeRT != null) UnityEngine.Object.Destroy(_outputProbeRT);
+                    if (_outputProbeTexture != null) UnityEngine.Object.Destroy(_outputProbeTexture);
+                    _outputProbeRT = new RenderTexture(4, 4, 0, RenderTextureFormat.ARGB32)
+                    {
+                        name = "KKS_DLSS_OutputProbe",
+                        filterMode = FilterMode.Bilinear,
+                        wrapMode = TextureWrapMode.Clamp
+                    };
+                    _outputProbeRT.Create();
+                    _outputProbeTexture = new Texture2D(4, 4, TextureFormat.RGBA32, false, true);
+                }
+
+                Graphics.Blit(output, _outputProbeRT);
+                var previous = RenderTexture.active;
+                RenderTexture.active = _outputProbeRT;
+                _outputProbeTexture.ReadPixels(new Rect(0, 0, 4, 4), 0, 0, false);
+                _outputProbeTexture.Apply(false, false);
+                RenderTexture.active = previous;
+
+                float maxChannel = 0f;
+                var pixels = _outputProbeTexture.GetPixels();
+                for (int i = 0; i < pixels.Length; i++)
+                {
+                    maxChannel = Mathf.Max(maxChannel, pixels[i].r, pixels[i].g, pixels[i].b);
+                }
+                _nativeOutputUsable = maxChannel > 0.0001f;
+                PPE_DLSS_Plugin.Log.LogInfo($"DLSS output validation: maxChannel={maxChannel:F5}, usable={_nativeOutputUsable}");
+                if (!_nativeOutputUsable)
+                    PPE_DLSS_Plugin.Log.LogWarning("DLSS output relay is black; falling back to source presentation");
+            }
+            catch (Exception e)
+            {
+                // Validation is diagnostic only. Keep native output enabled if
+                // the optional readback is unavailable on this Unity build.
+                _nativeOutputUsable = true;
+                PPE_DLSS_Plugin.Log.LogWarning($"DLSS output validation unavailable: {e.Message}");
+            }
         }
 
         private void OnDestroy()
