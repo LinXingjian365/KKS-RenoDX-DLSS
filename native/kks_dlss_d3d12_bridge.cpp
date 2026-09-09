@@ -222,7 +222,11 @@ namespace
         // runtime. Tell NGX explicitly so the captured depth guide is
         // interpreted with the correct near/far convention.
         const int createFlags = (int)(NVSDK_NGX_DLSS_Feature_Flags_IsHDR |
-            NVSDK_NGX_DLSS_Feature_Flags_DepthInverted);
+            NVSDK_NGX_DLSS_Feature_Flags_DepthInverted |
+            // KKS does not expose a stable exposure texture. Without one,
+            // DLSS must derive exposure internally; otherwise an HDR feature
+            // can complete successfully while producing an all-zero output.
+            NVSDK_NGX_DLSS_Feature_Flags_AutoExposure);
         g_params->Set("DLSS.Feature.Create.Flags", createFlags);
         g_params->Set("DLSS.Enable.Output.Subrects", (int)0);
         g_params->Set("Reset", (int)1);
@@ -289,6 +293,8 @@ namespace
         eval.InMVScaleX = g_slots[0].desc.Width * 0.5f;
         eval.InMVScaleY = g_slots[0].desc.Height * 0.5f;
         eval.InFrameTimeDeltaInMsec = 16.667f;
+        eval.InPreExposure = 1.0f;
+        eval.InExposureScale = 1.0f;
         // Reset history only for the first frame after feature creation. A
         // permanent reset would disable temporal accumulation and make the
         // motion-vector input effectively useless.
