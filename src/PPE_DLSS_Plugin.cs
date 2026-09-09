@@ -178,6 +178,7 @@ namespace PPE_DLSS
         private bool _inputColorReady;
         private int _inputProbeCooldown;
         private int _guideWarningCooldown;
+        private bool _guideValidationDone;
         private bool _nativeOutputUsable = true;
         private RenderTexture _outputProbeRT;
         private Texture2D _outputProbeTexture;
@@ -211,6 +212,7 @@ namespace PPE_DLSS
             _inputValidationDone = false;
             _inputColorReady = false;
             _inputProbeCooldown = 0;
+            _guideValidationDone = false;
             _nativeOutputUsable = true;
             _renderEntryLogged = false;
             _lastFrameTime = Time.realtimeSinceStartup;
@@ -285,6 +287,7 @@ namespace PPE_DLSS
             _inputValidationDone = false;
             _inputColorReady = false;
             _inputProbeCooldown = 0;
+            _guideValidationDone = false;
             _nativeOutputUsable = true;
             PPE_DLSS_Plugin.Log.LogInfo("DLSS init successful!");
         }
@@ -351,6 +354,12 @@ namespace PPE_DLSS
                     PPE_DLSS_Plugin.Log.LogWarning("Native DLSS guide missing: " +
                         (sceneDepth == null ? "depth " : "") +
                         (sceneMotionVectors == null ? "motion-vectors" : ""));
+                }
+
+                if (!_guideValidationDone && sceneDepth != null && sceneMotionVectors != null)
+                {
+                    _guideValidationDone = true;
+                    PPE_DLSS_Plugin.Log.LogInfo($"DLSS guide validation: depthMax={SampleTexture(sceneDepth):F5}, motionMax={SampleTexture(sceneMotionVectors):F5}");
                 }
 
                 // Execute DLSS with the live Unity guide resources.
@@ -447,9 +456,11 @@ namespace PPE_DLSS
             }
         }
 
-        private float SampleTexture(RenderTexture texture)
+        private float SampleTexture(Texture texture)
         {
-            if (texture == null || !texture.IsCreated()) return 0f;
+            if (texture == null) return 0f;
+            var renderTexture = texture as RenderTexture;
+            if (renderTexture != null && !renderTexture.IsCreated()) return 0f;
             if (_outputProbeRT == null || !_outputProbeRT.IsCreated())
             {
                 if (_outputProbeRT != null) UnityEngine.Object.Destroy(_outputProbeRT);
