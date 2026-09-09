@@ -233,11 +233,13 @@ namespace
         g_params->Set("Sharpness", 0.15f);
         g_params->Set("Jitter.Offset.X", 0.0f);
         g_params->Set("Jitter.Offset.Y", 0.0f);
-        // Unity's _CameraMotionVectorsTexture stores normalized screen-space
-        // displacement. NGX expects pixel-space displacement; the same
-        // conversion used by Unity's MotionBlur pass is v * 0.5 * (w, h).
-        const float mvScaleX = width * 0.5f;
-        const float mvScaleY = height * 0.5f;
+        // Unity's _CameraMotionVectorsTexture stores normalized UV-space
+        // displacement in the [-1, 1] range. NGX's MV scale is applied to the
+        // sampled values, so normalized input must stay at 1,1. Multiplying
+        // by width/2 and height/2 incorrectly turns a small camera movement
+        // into a hundreds-of-pixels vector and can make the NGX output zero.
+        const float mvScaleX = 1.0f;
+        const float mvScaleY = 1.0f;
         g_params->Set("MV.Scale.X", mvScaleX);
         g_params->Set("MV.Scale.Y", mvScaleY);
         g_params->Set("Color", sharedInputs ? g_slots[0].imported12 : g_color);

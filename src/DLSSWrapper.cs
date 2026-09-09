@@ -325,8 +325,10 @@ namespace PPE_DLSS
                     // Step 8: Set DLSS creation params
                     param.Set("PerfQualityValue", 2); // 0=maxPerf,1=balanced,2=quality,3=maxQuality
                     param.Set("DLSS.Feature.Create.Flags", 1); // HDR; guide flags are added as inputs are validated
-                    param.Set("MV.Scale.X", renderWidth * 0.5f);
-                    param.Set("MV.Scale.Y", renderHeight * 0.5f);
+                    // Unity's camera motion texture is normalized UV motion
+                    // in [-1, 1], so NGX must use a unit scale here.
+                    param.Set("MV.Scale.X", 1.0f);
+                    param.Set("MV.Scale.Y", 1.0f);
                     param.Set("Reset", (uint)1);
                     Debug.Log("[DLSS] Set DLSS params");
                 }
@@ -430,8 +432,10 @@ namespace PPE_DLSS
 
                     param.Set("FrameTimeDeltaInMsec", frameTimeMs);
                     param.Set("Reset", (uint)0);
-                    param.Set("MV.Scale.X", RenderWidth * 0.5f);
-                    param.Set("MV.Scale.Y", RenderHeight * 0.5f);
+                    // Unity's camera motion texture is normalized UV motion
+                    // in [-1, 1], so NGX must use a unit scale here.
+                    param.Set("MV.Scale.X", 1.0f);
+                    param.Set("MV.Scale.Y", 1.0f);
                     param.Set("Jitter.Offset.X", 0.0f);
                     param.Set("Jitter.Offset.Y", 0.0f);
                 }
