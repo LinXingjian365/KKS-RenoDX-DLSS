@@ -7,7 +7,7 @@ using UnityEngine.Rendering;
 
 namespace PPE_DLSS
 {
-    [BepInPlugin("com.user.ppe_dlss", "KKS DLSS Upscaler", "2.1.0")]
+    [BepInPlugin("com.user.ppe_dlss", "KKS DLSS Upscaler", "2.1.1")]
     public class PPE_DLSS_Plugin : BaseUnityPlugin
     {
         public static ManualLogSource Log;
@@ -24,6 +24,10 @@ namespace PPE_DLSS
         private string _status = "OFF";
         private bool _nativeInitBlocked;
         private float _nextToggleAllowed;
+        private float _toggleTransitionUntil;
+
+        private const float ToggleCooldownSeconds = 1.0f;
+        private const float ToggleTransitionSeconds = 0.35f;
 
         private void Awake()
         {
@@ -35,17 +39,18 @@ namespace PPE_DLSS
             ToggleKey = Config.Bind("General", "ToggleKey", new KeyboardShortcut(KeyCode.D, KeyCode.LeftControl), "Toggle DLSS");
             ShowUI = Config.Bind("General", "ShowUI", true, "Show status UI");
 
-            Log.LogInfo("KKS DLSS Upscaler v2.1.0 loaded (native NGX experimental path). Default off, Ctrl+D to enable.");
+            Log.LogInfo("KKS DLSS Upscaler v2.1.1 loaded (native NGX experimental path). Default off, Ctrl+D to enable.");
         }
 
         private void Update()
         {
-            if (ToggleKey.Value.IsDown() && Time.unscaledTime >= _nextToggleAllowed)
+            float now = Time.unscaledTime;
+            if (ToggleKey.Value.IsDown() && now >= _nextToggleAllowed)
             {
                 // Some KKS input layers can report a shortcut for more than
                 // one frame while Ctrl+D is held. Debounce it so one press
                 // cannot destroy and recreate the image effect repeatedly.
-                _nextToggleAllowed = Time.unscaledTime + 0.75f;
+                _nextToggleAllowed = now + ToggleCooldownSeconds;
                 Log.LogInfo($"DLSS toggle pressed; current enabled={EnableDLSS.Value}, component={(_dlssComponent != null ? "present" : "none")}");
                 if (EnableDLSS.Value)
                 {
@@ -55,10 +60,14 @@ namespace PPE_DLSS
                 {
                     _nativeInitBlocked = false;
                     EnableDLSS.Value = true;
-                    TryEnableDLSS();
+                    // Unity destroys MonoBehaviours at the end of the frame.
+                    // Defer re-attachment so the old OnDisable/Dispose and
+                    // camera image-effect chain have fully settled first.
+                    _toggleTransitionUntil = now + ToggleTransitionSeconds;
+                    _nextRetry = _toggleTransitionUntil;
                 }
             }
-            else if (EnableDLSS.Value && !_nativeInitBlocked && _dlssComponent == null && Time.unscaledTime >= _nextRetry)
+            else if (EnableDLSS.Value && !_nativeInitBlocked && _dlssComponent == null && now >= _nextRetry && now >= _toggleTransitionUntil)
             {
                 TryEnableDLSS();
             }
@@ -112,6 +121,8 @@ namespace PPE_DLSS
         {
             EnableDLSS.Value = false;
             _status = "OFF";
+            _toggleTransitionUntil = Time.unscaledTime + ToggleTransitionSeconds;
+            _nextRetry = _toggleTransitionUntil;
             if (_dlssComponent != null)
             {
                 Destroy(_dlssComponent);
@@ -156,6 +167,14 @@ namespace PPE_DLSS
         private float _lastFrameTime;
         private float _originalScale = 1f;
         private bool _renderEntryLogged;
+        private int _outputWarmupFrames;
+        private bool _outputReady;
+
+        // The first few Evaluate calls after feature creation initialize NGX's
+        // temporal history. Presenting that relay immediately can expose an
+        // all-zero texture during a close -> reopen transition, so keep the
+        // source image visible until several completed evaluations are ready.
+        private const int OutputWarmupEvaluations = 3;
 
         public int RenderWidth => _dlss?.RenderWidth ?? 0;
         public int RenderHeight => _dlss?.RenderHeight ?? 0;
@@ -174,6 +193,10 @@ namespace PPE_DLSS
 
         private void OnEnable()
         {
+            _outputWarmupFrames = OutputWarmupEvaluations;
+            _outputReady = false;
+            _renderEntryLogged = false;
+            _lastFrameTime = Time.realtimeSinceStartup;
             if (_cam != null)
             {
                 _cam.depthTextureMode |= DepthTextureMode.Depth | DepthTextureMode.MotionVectors;
@@ -239,6 +262,8 @@ namespace PPE_DLSS
             }
 
             _initialized = true;
+            _outputWarmupFrames = OutputWarmupEvaluations;
+            _outputReady = false;
             PPE_DLSS_Plugin.Log.LogInfo("DLSS init successful!");
         }
 
@@ -246,15 +271,20 @@ namespace PPE_DLSS
         {
             if (!_initialized || _dlss == null)
             {
-                Graphics.Blit(source, destination);
+                if (source != null && destination != null)
+                    Graphics.Blit(source, destination);
                 return;
             }
 
             // Unity can invoke image effects during additive scene teardown
             // with one of the temporary render targets already released.
             // Skip that transition frame instead of dereferencing a null RT.
-            if (source == null || destination == null)
+            if (source == null || destination == null || source.width <= 0 || source.height <= 0 || destination.width <= 0 || destination.height <= 0)
+            {
+                if (source != null && destination != null)
+                    Graphics.Blit(source, destination);
                 return;
+            }
 
             try
             {
@@ -291,6 +321,17 @@ namespace PPE_DLSS
                     var outputRT = _dlss.GetOutputTexture();
                     if (outputRT != null)
                     {
+                        if (!_outputReady)
+                        {
+                            if (_outputWarmupFrames > 0)
+                            {
+                                _outputWarmupFrames--;
+                                Graphics.Blit(source, destination);
+                                return;
+                            }
+                            _outputReady = true;
+                            PPE_DLSS_Plugin.Log.LogInfo("DLSS output relay warmed up; presenting native output");
+                        }
                         Graphics.Blit(outputRT, destination);
                     }
                     else

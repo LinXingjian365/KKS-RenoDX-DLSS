@@ -1,0 +1,238 @@
+# KKS BepInEx Plugin Inventory (2026-09-09)
+
+Source: latest pasted BepInEx startup log. The list contains plugins that BepInEx reported as loaded, including version strings.
+
+- AAAAAAAAAAAA 1.2.3.11
+- Accessories to Studio Items 1.0.1
+- Accessory Clothes 1.0.4
+- Accessory Quick Remove 1.0
+- Additional Skin Effects 3.0.2
+- AdvIKPlugin 1.7.1
+- AmazingNewAccessoryLogic 0.1.1
+- Animation Controller 2.3
+- Animation Loader 1.1.3.4
+- Animation Overdrive 1.1
+- Anisotropic Morph 0.25
+- Auto Keyframe 1.3.0.0
+- Axis Unlocker 1.1.1.11
+- Better Color Picker 3.2
+- Better Scaling 1.2.2.11
+- BetterSceneLoader 1.1.1.1
+- BetterShadowQualitySettings 1.0.0.0
+- BlendshapeCreator 1.1
+- BlendShapeEditor 0.3.2
+- BreastPhysicsController 2.2.0.1
+- Bulge in the pants, tent in the woods 1.0.2
+- Butt Physics Editor 1.1
+- C# Script Loader 1.2.4
+- Camera Target Fix 22.2
+- CameraFrameMask 1.1.1.1
+- Card Author Data 1.47
+- Catch Unity Event Exceptions 1.0
+- CharaAnime 2.8.0
+- Character Alpha Mask 1.0.0
+- Character Export 1.0
+- CharaStateX 1.1.2.1
+- Cheat Tools 3.6.1
+- Cloth colliders support 1.1
+- ClothCycler 1.0.0
+- Clothes Overlay Mod 7.1.2
+- Clothes Overlay Mod GUI 7.1.2
+- Clothes To Accessories 1.1.2
+- Clothing BlendShape 1.0.2
+- Clothing Unlocker 2.0.2
+- Codex KKS Runtime Probe V6 1.4.0
+- Colliders 1.3.1
+- ColliderSound 1.2
+- ColllidersDebug 1.0.1
+- Compositor 1.2.0
+- Configuration Manager 19.0
+- Configuration Manager wrapper for Koikatsu Sunshine 21.1.3
+- Coordinate Load Option 21.12.23.0
+- Copy Character BodyMaterial 1.0.0
+- Cursor Indicator 1.0.0.9
+- DefaultParamEditor 1.4.2.1
+- Demosaic 1.1
+- DisableHipDynamicBones 1.0
+- Drag & Drop 1.3.1
+- Dynamic Bone Editor 1.1
+- Dynamic Bones Fix 22.2
+- DynamicBoneDistributionEditor 1.5.1
+- Enable Full Screen Toggle 1.0
+- Enable Resize 3.0
+- Expand Male Maker 1.3.0.0
+- ExpressionControl 0.3.0.11
+- Extended Save 21.1.3
+- Extra move axis in bottom right corner 2.0
+- Eye Control 1.0.1
+- Eye Shaking 1.3.1
+- Eyebrow Outline Fix 22.2
+- Face Shadows Fix 22.2
+- Fade Adjuster 1.0.3
+- Fix Shader Dropdown Menu 22.2
+- FK and IK 1.1.3
+- FK Height Adjust UI 1.0.3
+- Force High Poly 2.1
+- FPS Counter 3.3.1
+- Free H Random 1.4
+- Galatea 1.0.0
+- Game and Studio Data Corruption Fixes 22.2
+- GeBo Modding API 1.2.0.1
+- Graphics Settings 1.4
+- Guide Objects Fix 22.2
+- H Character Adjustment 2.1
+- Hair Accessory Customizer 1.1.7
+- Hair Shadows Fix 22.2
+- HairShadowColorControl 1.0
+- HideAllUI 2.3.2
+- Image Embed 1.0.3
+- IMGUITextCursorFix 1.0
+- Input Hotkey Block 1.4
+- Input Length Unlocker 21.1.3
+- Invalid Scene Protection 22.2
+- Invisible Body 1.4
+- Item Layer Edit 1.1.3.1
+- KK Resource Hot Reload 0.3.3
+- KK_Pregnancy 2.9
+- KK_PregnancyPlus 7.9
+- KKPE 2.21.5
+- KKPRim Controller 1.8
+- KKS Chara Studio VR 1.5
+- KKS DLSS Upscaler 2.1.0
+- KKS Realtime Reflection Probe 1.2.0
+- KKS Studio Transform Orientation 1.1.2
+- KKS_AssetImport 4.0.1
+- KKS_EditFangs 1.1.1
+- KKS_Fix_GarbageTruck 22.2
+- KKS_ObjImport 3.0.1
+- KKS_PostProcessingEffectsV3 4.5
+- KKS_RandomStatus 1.0.0
+- KKS_ResetRotationFix 1.0.0
+- KKS_StudioAccessoryNames 1.1.0
+- KKS_StudioItemIK 0.2.0
+- KKS_StudioKeybinds 1.0.1
+- KKS_StudioMiscSearch 1.2.0
+- KKS_StudioWindowResize 1.1.1
+- KKS_VideoPlate 1.1.2
+- KKS_WTFix 1.2.3
+- KKSABMX (BonemodX) 5.4
+- KKSUS 1.15.0.1
+- KKUSS Sunshine Fix 1.0.0.5
+- Koikatsu Shader Fixer 1.2.0.9
+- Koikatsu: Become Trap 2.2.1
+- Kokyu 1.0.0
+- LewdCrestX 1.4.1
+- Light Manager 1.0.2.1
+- Light Settings 1.3.0.11
+- Light Toggler 1.0.0.9
+- Lighting Tweaks 1.1
+- LightShafts 1.0.4
+- Liquid_shader_wobble 1.0
+- LiquidShaderWobblePlugin 1.0.0
+- LiquidWobbleMPB 1.0.0
+- List Override 1.0
+- LoadFileLimitedFix 22.2
+- LockOnPlugin 2.7.0.1
+- Maker Defaults 1.1
+- Maker/Studio Browser Folders 4.0.1
+- MakerAccessorySlotNumbers 1.0.2
+- MakerBridge 1.0.5.1
+- Male Juice 1.3
+- Manifest Corrector 22.2
+- Mass Shader Editor 1.5.1.11
+- Material Editor 4.0.3
+- Material Editor Clipboard 1.0.0.11
+- Material Editor Studio 4.0.3
+- MaterialEditor ColorSpace Fix 1.1.0
+- Message Center 1.1.1.1
+- MoarCamz 1.0.8
+- Mod Bone Implantor 1.1.2
+- Modding API 1.47
+- More Accessory Parents 2.0.1
+- More Outfit Slots 1.1.3
+- MoreAccessories 2.0.21.1
+- Move Controller KOI 1.7.1.1
+- MuneRestoration 1.0.0
+- Mute In Background 1.1
+- NodesConstraints 1.6.3
+- Null Checks 22.2
+- ObjectMap 1.2.2
+- Optimize IMGUI GC allocations 1.0
+- OrthographicCamera 1.1.2
+- Performancer 1.2.6.9
+- PerspectiveX 1.3.2
+- PictureInPicture 1.0.1
+- Pose Gender Restriction Unlocker 1.0
+- Pose Load Fix 22.2
+- Pose Quick Load 1.1
+- Pose Tools 1.1.3
+- PoseLibrary 1.4.0
+- PPE Extended (Full PPSv2) 2.0.6
+- ProjectorUtils 1.0
+- Pushup 1.5.2
+- QuickAccessBox 3.4.1
+- Random Character Generator 2.0
+- Reload Character List On Change 1.5.2
+- Remove Cards To Recycle Bin 2.0
+- RenameStuff 1.2.0
+- Resource Unload Optimizations 22.2
+- RikkiUtils 1.0
+- Rim Remover 1.2
+- RSkoi_ComponentUtil 1.5.0
+- Runtime Unity Editor 6.3
+- Save_PostProcessingEffects 0.1
+- SaveCameraObjectFov 1.0
+- Scene Effects Presets 2.1
+- SceneEffectsExtended 1.0
+- Screenshot Manager 21.1.3
+- Settings Fix 22.2
+- Sex Faces 1.0.0
+- Shader Swapper 1.8.1
+- ShaderManagementTool 2.2.0.0
+- ShadowColorSwapper 1.2
+- Shallty Utils 1.3.1
+- Sideloader 21.1.3
+- Skin Overlay Mod 7.1.2
+- Skin Overlay Mod GUI 7.1.2
+- Slider Unlocker 21.1.3
+- Stiletto 2.4.2.1
+- Studio Auto Close Loading Scene Window 21.9.27.0
+- Studio Better Penetration 4.5.5.4
+- Studio Camera Tweaks 1.0
+- Studio Chara Light Linked To Camera 21.9.24.0
+- Studio Chara Only Load Body 21.12.23.0
+- Studio Character Sort 1.0.1
+- Studio Custom Masking 1.2
+- Studio Node Tweaks 1.2
+- Studio Object Move Hotkeys 1.0
+- Studio Optimizations 22.2
+- Studio Overlay Manager 1.0
+- Studio Reflect FK Fix 21.9.28.0
+- Studio Scene Loaded Sound 1.1
+- Studio Simple Color On Girls 21.9.24.0
+- Studio Text Plugin 21.10.23.0
+- Studio Transgender Loading 21.9.27.0
+- StudioAddonLite 1.1.1.1
+- StudioItemSkeleton 1.1.0
+- StudioMapThumbnail 1.2.0
+- StudioPseudoMaker 1.5.2.0
+- StudioSceneSettings 1.3.2
+- StudioSkinColorControl 1.0
+- StudioVoiceControl 1.1
+- Text Resource Redirector 1.4.5.5
+- The Bird of Hermes 5.5.0.0
+- Timeline 1.5.6
+- Timeline Flow Control Logic 1.0
+- Translation Cache Cleaner 0.6.0.3
+- Translation Helper 1.1.1.0
+- TreeNodeNaming 1.2.0
+- TreeNodeOrdering 2.1.2
+- Two Luts in Studio 1.0.1
+- UIScalerAndWidescreenSupport 1.0.3
+- Uncensor Selector 3.12.3
+- UnityConsoleK_VNGE 1.0.0.0
+- Unlimited Map Lights 22.2
+- VideoExport 2.1
+- XUnity Auto Translator 5.6.1
+- XUnity Resource Redirector 2.1.0
+

@@ -1,5 +1,12 @@
 # Changelog
 
+## v2.5.2 - 2026-09-09
+
+- Fixed D3D12 bridge teardown ordering for reliable DLSS close/reopen cycles.
+- Added queue-fence draining and NGX-before-relay release ordering in the native bridge.
+- Prevented the bridge path from calling legacy D3D11 shutdown.
+- Added a three-frame output warmup fallback and safer toggle transition delay.
+
 ## v2.5.1 - 2026-09-08
 
 - Deferred native D3D12 DLSS feature creation until live KKS color, depth, and motion-vector relay textures are staged.

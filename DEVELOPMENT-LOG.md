@@ -28,6 +28,17 @@ warnings after quarantining 427 skipped versions, plus the misplaced
 periodic health logging was reduced from every 120 frames to every 600 frames;
 failures still log immediately.
 
+### 2026-09-09: Safe close/reopen lifecycle
+
+Studio testing showed that DLSS could report successful evaluation immediately
+after a close/reopen toggle while the presentation was still black. The cause
+was teardown ordering: the wrapper called the legacy D3D11 NGX shutdown during
+the D3D12 bridge path and destroyed Unity textures before the bridge drained its
+queue. The bridge now waits for its fence, releases NGX before shared relays,
+and the wrapper skips D3D11 shutdown for bridge-owned sessions. The Unity image
+effect also keeps the source image visible for three completed evaluations while
+NGX temporal history warms up, then logs when native output presentation begins.
+
 The current Feeder log proves that NGX initializes, creates a Super Resolution feature, and delivers multiple frames. It also reports a flat depth probe and nearly-zero motion vectors. The project therefore records two separate outcomes: transport/evaluation PASS, strict temporal-input quality FAIL. `tools/verify_dlss_log.ps1` makes this distinction reproducible and exits non-zero until both guides contain useful scene data.
 
 Research also confirmed the boundary of `dlss5-bridge`: mirror mode is designed for an existing native DLSS request, while synthetic mode is a substitute built from ReShade depth and optical flow. It is not an exact KKS-native input path. The native milestone remains a private D3D12 NGX bridge with real KKS color/depth/MV/jitter/exposure capture and synchronized output copy-back.

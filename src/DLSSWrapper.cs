@@ -592,6 +592,19 @@ namespace PPE_DLSS
 
             try
             {
+                // The bridge owns the official D3D12 NGX session.  Tear it
+                // down before destroying Unity's textures, and never call
+                // the legacy D3D11 shutdown entry point for a bridge session.
+                // Calling D3D11_Shutdown here used to invalidate the shared
+                // runtime during close -> reopen and could leave a black
+                // presentation even though the next Evaluate returned OK.
+                bool bridgeWasActive = _bridgeActive;
+                if (bridgeWasActive)
+                {
+                    try { D3D12BridgeNative.KKS_DLSS12_Shutdown(); } catch { }
+                    _bridgeActive = false;
+                }
+
                 if (_featureHandle != IntPtr.Zero)
                 {
                     DLSSNative.D3D11_ReleaseFeature(_featureHandle);
@@ -606,14 +619,9 @@ namespace PPE_DLSS
                 if (_depthRT != null) { UnityEngine.Object.Destroy(_depthRT); _depthRT = null; }
                 if (_mvRT != null) { UnityEngine.Object.Destroy(_mvRT); _mvRT = null; }
                 if (_outputRT != null) { UnityEngine.Object.Destroy(_outputRT); _outputRT = null; }
-                if (_initialized)
+                if (_initialized && !bridgeWasActive)
                 {
                     DLSSNative.D3D11_Shutdown();
-                }
-                if (_bridgeActive)
-                {
-                    D3D12BridgeNative.KKS_DLSS12_Shutdown();
-                    _bridgeActive = false;
                 }
                 _initialized = false;
                 Debug.Log("[DLSS] Disposed");

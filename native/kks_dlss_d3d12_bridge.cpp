@@ -50,8 +50,44 @@ namespace
     SharedSlot g_slots[4];
     std::mutex g_mutex;
 
+    // D3D12 work can still be in flight when Unity destroys the image-effect
+    // textures during a DLSS toggle.  Always drain our queue before releasing
+    // NGX and the shared relay resources; otherwise the next initialization
+    // can inherit an incomplete cross-API copy and present black frames.
+    void waitForQueueIdle()
+    {
+        if (!g_queue || !g_fence || !g_fenceEvent)
+            return;
+        const unsigned long long value = ++g_fenceValue;
+        if (FAILED(g_queue->Signal(g_fence, value)))
+            return;
+        if (FAILED(g_fence->SetEventOnCompletion(value, g_fenceEvent)))
+            return;
+        WaitForSingleObject(g_fenceEvent, 5000);
+    }
+
     void releaseDevice()
     {
+        // Drain submitted Evaluate/copy work before touching any resource it
+        // may reference.  This is especially important for close -> reopen.
+        waitForQueueIdle();
+
+        // Release the NGX feature while its parameter-bound resources are
+        // still alive.  The previous order released shared slots first,
+        // leaving NGX with dangling resource references during teardown.
+        if (g_handle)
+        {
+            auto release = &NVSDK_NGX_D3D12_ReleaseFeature;
+            if (release) { __try { release(g_handle); } __except (EXCEPTION_EXECUTE_HANDLER) { } }
+            g_handle = nullptr;
+        }
+        if (g_params)
+        {
+            auto destroy = &NVSDK_NGX_D3D12_DestroyParameters;
+            if (destroy) { __try { destroy(g_params); } __except (EXCEPTION_EXECUTE_HANDLER) { } }
+            g_params = nullptr;
+        }
+
         for (auto& slot : g_slots)
         {
             if (slot.imported12) { slot.imported12->Release(); slot.imported12 = nullptr; }
@@ -61,22 +97,10 @@ namespace
         }
         if (g_d3d11Context) { g_d3d11Context->Release(); g_d3d11Context = nullptr; }
         if (g_d3d11) { g_d3d11->Release(); g_d3d11 = nullptr; }
-        if (g_handle)
-        {
-            auto release = &NVSDK_NGX_D3D12_ReleaseFeature;
-            if (release) { __try { release(g_handle); } __except (EXCEPTION_EXECUTE_HANDLER) { } }
-            g_handle = nullptr;
-        }
         g_featureAttempted = false;
         g_firstEval = true;
         g_evalCount = 0;
         g_lastEvalMs = 0.0;
-        if (g_params)
-        {
-            auto destroy = &NVSDK_NGX_D3D12_DestroyParameters;
-            if (destroy) { __try { destroy(g_params); } __except (EXCEPTION_EXECUTE_HANDLER) { } }
-            g_params = nullptr;
-        }
         if (g_output) { g_output->Release(); g_output = nullptr; }
         if (g_motion) { g_motion->Release(); g_motion = nullptr; }
         if (g_depth) { g_depth->Release(); g_depth = nullptr; }
