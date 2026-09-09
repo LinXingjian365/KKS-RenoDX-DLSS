@@ -195,6 +195,10 @@ namespace
         g_params->Set("Depth", sharedInputs ? g_slots[1].imported12 : g_depth);
         g_params->Set("MotionVectors", sharedInputs ? g_slots[2].imported12 : g_motion);
         g_params->Set("Output", sharedOutput ? g_slots[3].imported12 : g_output);
+        std::snprintf(g_capabilityReport, sizeof(g_capabilityReport),
+            "SR available=%d, needsDriver=%d, initResult=0x%08X; NGX input=%ux%u output=%ux%u mode=MaxQuality MVScale=%.1fx%.1f",
+            available, needsDriver, initResult, width, height, outputWidth, outputHeight,
+            mvScaleX, mvScaleY);
 
         g_feature = guarded([&]() { return create(g_list, NVSDK_NGX_Feature_SuperSampling, g_params, &g_handle); });
         if (g_feature != NVSDK_NGX_Result_Success || !g_handle) return false;
