@@ -370,11 +370,11 @@ namespace
             relayDesc.CPUAccessFlags = 0;
             relayDesc.SampleDesc.Count = 1;
             relayDesc.SampleDesc.Quality = 0;
-            // CPU-side fence waits provide the cross-API ordering here. Do
-            // not mark the allocation as a keyed-mutex resource: D3D12 can
-            // open an NTHANDLE relay, but it cannot acquire a D3D11 keyed
-            // mutex, which otherwise leaves NGX's UAV writes at zero.
-            relayDesc.MiscFlags = D3D11_RESOURCE_MISC_SHARED_NTHANDLE;
+            // D3D11 requires the keyed-mutex bit alongside NTHANDLE for this
+            // shareable texture combination. We still order access with the
+            // explicit D3D12 fence and resource barriers below; the mutex bit
+            // is retained for API-valid allocation and handle creation.
+            relayDesc.MiscFlags = D3D11_RESOURCE_MISC_SHARED_NTHANDLE | D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX;
             HRESULT createHr = g_d3d11->CreateTexture2D(&relayDesc, nullptr, &slot.relay11);
             if (FAILED(createHr)) { g_stageHresults[slotIndex] = createHr; g_stageCodes[slotIndex] = 3; return false; }
             IDXGIResource1* dxgiResource = nullptr;
