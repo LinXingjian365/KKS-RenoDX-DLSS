@@ -46,6 +46,7 @@ namespace
         HANDLE handle = nullptr;
         ID3D12Resource* imported12 = nullptr;
         D3D11_TEXTURE2D_DESC desc{};
+        D3D12_RESOURCE_STATES state = D3D12_RESOURCE_STATE_COMMON;
     };
     SharedSlot g_slots[4];
     std::mutex g_mutex;
@@ -94,6 +95,7 @@ namespace
             if (slot.handle) { CloseHandle(slot.handle); slot.handle = nullptr; }
             if (slot.relay11) { slot.relay11->Release(); slot.relay11 = nullptr; }
             slot.desc = {};
+            slot.state = D3D12_RESOURCE_STATE_COMMON;
         }
         if (g_d3d11Context) { g_d3d11Context->Release(); g_d3d11Context = nullptr; }
         if (g_d3d11) { g_d3d11->Release(); g_d3d11 = nullptr; }
@@ -282,8 +284,54 @@ namespace
         // motion-vector input effectively useless.
         eval.InReset = g_firstEval ? 1 : 0;
         eval.InToneMapperType = NVSDK_NGX_TONEMAPPER_STRING;
+
+        // NGX receives the raw D3D12 resources and does not add application
+        // barriers. The relays are written by D3D11, so import them from
+        // COMMON into the SRV/UAV states required by DLSS before evaluating.
+        D3D12_RESOURCE_BARRIER toNgx[4]{};
+        UINT toNgxCount = 0;
+        auto addBarrier = [&](SharedSlot& slot, D3D12_RESOURCE_STATES desired)
+        {
+            if (!slot.imported12 || slot.state == desired) return;
+            auto& barrier = toNgx[toNgxCount++];
+            barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+            barrier.Transition.pResource = slot.imported12;
+            barrier.Transition.StateBefore = slot.state;
+            barrier.Transition.StateAfter = desired;
+            barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+            slot.state = desired;
+        };
+        addBarrier(g_slots[0], D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+        addBarrier(g_slots[1], D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+        addBarrier(g_slots[2], D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+        addBarrier(g_slots[3], D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+        if (toNgxCount) g_list->ResourceBarrier(toNgxCount, toNgx);
+
         NVSDK_NGX_Result r = NGX_D3D12_EVALUATE_DLSS_EXT(g_list, g_handle, g_params, &eval);
-        if (r != NVSDK_NGX_Result_Success || FAILED(g_list->Close())) { g_feature = r; return false; }
+
+        // Return ownership to D3D11 before signaling the fence. This makes
+        // the following CopyResource and next-frame staging operations safe.
+        D3D12_RESOURCE_BARRIER fromNgx[4]{};
+        UINT fromNgxCount = 0;
+        auto restoreCommon = [&](SharedSlot& slot)
+        {
+            if (!slot.imported12 || slot.state == D3D12_RESOURCE_STATE_COMMON) return;
+            auto& barrier = fromNgx[fromNgxCount++];
+            barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+            barrier.Transition.pResource = slot.imported12;
+            barrier.Transition.StateBefore = slot.state;
+            barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_COMMON;
+            barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+            slot.state = D3D12_RESOURCE_STATE_COMMON;
+        };
+        restoreCommon(g_slots[0]);
+        restoreCommon(g_slots[1]);
+        restoreCommon(g_slots[2]);
+        restoreCommon(g_slots[3]);
+        if (fromNgxCount) g_list->ResourceBarrier(fromNgxCount, fromNgx);
+
+        HRESULT closeHr = g_list->Close();
+        if (r != NVSDK_NGX_Result_Success || FAILED(closeHr)) { g_feature = r; return false; }
         ID3D12CommandList* lists[] = {g_list}; g_queue->ExecuteCommandLists(1, lists);
         if (FAILED(g_queue->Signal(g_fence, ++g_fenceValue)) || FAILED(g_fence->SetEventOnCompletion(g_fenceValue, g_fenceEvent))) return false;
         bool completed = WaitForSingleObject(g_fenceEvent, 5000) == WAIT_OBJECT_0;
@@ -322,7 +370,11 @@ namespace
             relayDesc.CPUAccessFlags = 0;
             relayDesc.SampleDesc.Count = 1;
             relayDesc.SampleDesc.Quality = 0;
-            relayDesc.MiscFlags = D3D11_RESOURCE_MISC_SHARED_NTHANDLE | D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX;
+            // CPU-side fence waits provide the cross-API ordering here. Do
+            // not mark the allocation as a keyed-mutex resource: D3D12 can
+            // open an NTHANDLE relay, but it cannot acquire a D3D11 keyed
+            // mutex, which otherwise leaves NGX's UAV writes at zero.
+            relayDesc.MiscFlags = D3D11_RESOURCE_MISC_SHARED_NTHANDLE;
             HRESULT createHr = g_d3d11->CreateTexture2D(&relayDesc, nullptr, &slot.relay11);
             if (FAILED(createHr)) { g_stageHresults[slotIndex] = createHr; g_stageCodes[slotIndex] = 3; return false; }
             IDXGIResource1* dxgiResource = nullptr;
@@ -332,6 +384,8 @@ namespace
             if (FAILED(hr) || !slot.handle) { g_stageCodes[slotIndex] = 5; return false; }
             if (FAILED(g_device->OpenSharedHandle(slot.handle, IID_PPV_ARGS(&slot.imported12)))) { g_stageCodes[slotIndex] = 6; return false; }
             slot.desc = sourceDesc;
+            // Shared D3D11 allocations enter the D3D12 bridge in COMMON.
+            slot.state = D3D12_RESOURCE_STATE_COMMON;
         }
         // Slot 3 is the DLSS output relay; it is written by NGX and must not
         // be overwritten with the pre-existing Unity target contents.
