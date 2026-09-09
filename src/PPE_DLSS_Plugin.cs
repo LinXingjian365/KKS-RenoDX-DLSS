@@ -23,6 +23,7 @@ namespace PPE_DLSS
         private int _attemptCount;
         private string _status = "OFF";
         private bool _nativeInitBlocked;
+        private float _nextToggleAllowed;
 
         private void Awake()
         {
@@ -39,8 +40,13 @@ namespace PPE_DLSS
 
         private void Update()
         {
-            if (ToggleKey.Value.IsDown())
+            if (ToggleKey.Value.IsDown() && Time.unscaledTime >= _nextToggleAllowed)
             {
+                // Some KKS input layers can report a shortcut for more than
+                // one frame while Ctrl+D is held. Debounce it so one press
+                // cannot destroy and recreate the image effect repeatedly.
+                _nextToggleAllowed = Time.unscaledTime + 0.75f;
+                Log.LogInfo($"DLSS toggle pressed; current enabled={EnableDLSS.Value}, component={(_dlssComponent != null ? "present" : "none")}");
                 if (EnableDLSS.Value)
                 {
                     DisableDLSS();
@@ -90,7 +96,9 @@ namespace PPE_DLSS
 
             if (cam == null)
             {
-                Log.LogError("Cannot find main camera");
+                // Studio creates its cameras after the Init scene. This is a
+                // normal retry state, not a plugin failure.
+                Log.LogInfo("DLSS waiting for Studio camera...");
                 _status = "WAITING_FOR_CAMERA";
                 return;
             }
@@ -147,6 +155,7 @@ namespace PPE_DLSS
         private bool _initialized;
         private float _lastFrameTime;
         private float _originalScale = 1f;
+        private bool _renderEntryLogged;
 
         public int RenderWidth => _dlss?.RenderWidth ?? 0;
         public int RenderHeight => _dlss?.RenderHeight ?? 0;
@@ -168,7 +177,9 @@ namespace PPE_DLSS
             if (_cam != null)
             {
                 _cam.depthTextureMode |= DepthTextureMode.Depth | DepthTextureMode.MotionVectors;
-                _guides = new DLSSGuideCapture(_cam);
+                int guideW = Mathf.Max(1, Mathf.RoundToInt(Screen.width / PPE_DLSS_Plugin.ScaleFactor.Value));
+                int guideH = Mathf.Max(1, Mathf.RoundToInt(Screen.height / PPE_DLSS_Plugin.ScaleFactor.Value));
+                _guides = new DLSSGuideCapture(_cam, guideW, guideH);
                 _guides.Install();
             }
             try
@@ -184,6 +195,7 @@ namespace PPE_DLSS
 
         private void OnDisable()
         {
+            PPE_DLSS_Plugin.Log?.LogInfo("DLSS component OnDisable; disposing native resources");
             Cleanup();
         }
 
@@ -238,8 +250,19 @@ namespace PPE_DLSS
                 return;
             }
 
+            // Unity can invoke image effects during additive scene teardown
+            // with one of the temporary render targets already released.
+            // Skip that transition frame instead of dereferencing a null RT.
+            if (source == null || destination == null)
+                return;
+
             try
             {
+                if (!_renderEntryLogged)
+                {
+                    _renderEntryLogged = true;
+                    PPE_DLSS_Plugin.Log.LogInfo($"DLSS OnRenderImage entered: source={source.width}x{source.height} format={source.format}, destination={destination.width}x{destination.height} format={destination.format}");
+                }
                 float frameTime = (Time.realtimeSinceStartup - _lastFrameTime) * 1000f;
                 _lastFrameTime = Time.realtimeSinceStartup;
 
@@ -282,7 +305,7 @@ namespace PPE_DLSS
             }
             catch (Exception e)
             {
-                PPE_DLSS_Plugin.Log.LogError($"DLSS render exception: {e.Message}");
+                PPE_DLSS_Plugin.Log.LogError($"DLSS render exception: {e.Message}\n{e.StackTrace}");
                 Graphics.Blit(source, destination);
             }
         }
@@ -310,6 +333,8 @@ namespace PPE_DLSS
     internal sealed class DLSSGuideCapture : IDisposable
     {
         private readonly Camera _camera;
+        private readonly int _width;
+        private readonly int _height;
         private CommandBuffer _commandBuffer;
         private RenderTexture _depthTexture;
         private RenderTexture _motionTexture;
@@ -317,17 +342,19 @@ namespace PPE_DLSS
         public Texture DepthTexture => _depthTexture;
         public Texture MotionTexture => _motionTexture;
 
-        public DLSSGuideCapture(Camera camera)
+        public DLSSGuideCapture(Camera camera, int width, int height)
         {
             _camera = camera;
+            _width = width;
+            _height = height;
         }
 
         public void Install()
         {
             if (_camera == null || _commandBuffer != null) return;
 
-            int width = Mathf.Max(1, _camera.pixelWidth);
-            int height = Mathf.Max(1, _camera.pixelHeight);
+            int width = _width > 0 ? _width : Mathf.Max(1, _camera.pixelWidth);
+            int height = _height > 0 ? _height : Mathf.Max(1, _camera.pixelHeight);
             _depthTexture = new RenderTexture(width, height, 0, RenderTextureFormat.RFloat)
             {
                 name = "KKS_DLSS_NativeDepth",

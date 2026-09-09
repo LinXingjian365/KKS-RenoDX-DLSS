@@ -40,6 +40,12 @@ namespace PPE_DLSS
         internal static extern int KKS_DLSS12_LastStageHRESULT(uint slot);
 
         [DllImport(DLL, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern uint KKS_DLSS12_ProbeEvaluate();
+
+        [DllImport(DLL, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern uint KKS_DLSS12_CopyOutputToD3D11(IntPtr target);
+
+        [DllImport(DLL, CallingConvention = CallingConvention.Cdecl)]
         internal static extern void KKS_DLSS12_Shutdown();
     }
 
@@ -76,6 +82,7 @@ namespace PPE_DLSS
         private bool _bridgeActive;
         private int _stageLogCooldown;
         private uint _lastLoggedBridgeFeature;
+        private int _bridgeEvalLogCooldown;
 
         public int RenderWidth { get; private set; }
         public int RenderHeight { get; private set; }
@@ -126,7 +133,17 @@ namespace PPE_DLSS
                 // The native bridge owns its D3D12 NGX session. Do not continue
                 // into the incompatible KKS D3D11 NGX initialization path.
                 if (_bridgeActive)
-                    return false;
+                {
+                    // The native D3D12 path is the active NGX owner. Mark the
+                    // wrapper initialized so Unity keeps the image effect
+                    // alive while the first live frame stages its resources.
+                    // The legacy D3D11 path normally creates these targets
+                    // later in Init; bridge mode returns early, so create
+                    // them explicitly before the first OnRenderImage call.
+                    CreateTextures();
+                    _initialized = true;
+                    return true;
+                }
 
                 // Step 2: Verify DLL works
                 try
@@ -295,8 +312,8 @@ namespace PPE_DLSS
                     // Step 8: Set DLSS creation params
                     param.Set("PerfQualityValue", 2); // 0=maxPerf,1=balanced,2=quality,3=maxQuality
                     param.Set("DLSS.Feature.Create.Flags", 1); // HDR; guide flags are added as inputs are validated
-                    param.Set("MV.Scale.X", 1.0f);
-                    param.Set("MV.Scale.Y", 1.0f);
+                    param.Set("MV.Scale.X", renderWidth * 0.5f);
+                    param.Set("MV.Scale.Y", renderHeight * 0.5f);
                     param.Set("Reset", (uint)1);
                     Debug.Log("[DLSS] Set DLSS params");
                 }
@@ -332,8 +349,41 @@ namespace PPE_DLSS
             if (!_initialized)
             {
                 StageBridgeInputs(sceneColor, sceneDepth, sceneMotionVectors);
+                StageBridgeOutput(_outputRT);
                 return false;
             }
+
+            // The D3D12 bridge owns the official NGX feature. Stage all four
+            // live resources, evaluate on its command list, then copy the
+            // completed output back into Unity's target texture.
+            if (_bridgeActive && sceneColor != null && sceneDepth != null && sceneMotionVectors != null && _outputRT != null)
+            {
+                // Unity's source is the presentation-sized 1920x1080 image;
+                // the bridge must receive the already downscaled render-sized
+                // color target (1280x720) to match NGX creation parameters.
+                Texture bridgeColor = _colorRT != null ? _colorRT : sceneColor;
+                StageBridgeInputs(bridgeColor, sceneDepth, sceneMotionVectors);
+                StageBridgeOutput(_outputRT);
+                uint eval = D3D12BridgeNative.KKS_DLSS12_ProbeEvaluate();
+                if (eval != 1 || _bridgeEvalLogCooldown-- <= 0)
+                {
+                    _bridgeEvalLogCooldown = 600;
+                    NativeLog($"D3D12 Evaluate={(eval == 1 ? "success" : "failed")}, outputStage={D3D12BridgeNative.KKS_DLSS12_LastStageCode(3)}(0x{D3D12BridgeNative.KKS_DLSS12_LastStageHRESULT(3):X8})");
+                }
+                if (eval == 1)
+                {
+                    uint copy = D3D12BridgeNative.KKS_DLSS12_CopyOutputToD3D11(_outputRT.GetNativeTexturePtr());
+                    if (copy != 1 || _bridgeEvalLogCooldown == 600)
+                        NativeLog($"D3D12 output copy-back={(copy == 1 ? "success" : "failed")}");
+                    if (copy == 1)
+                        return true;
+                }
+                // Do not invoke the legacy D3D11 evaluator with a null handle
+                // when the official D3D12 bridge owns this instance.
+                return false;
+            }
+
+            if (_bridgeActive) return false;
 
             try
             {
@@ -354,6 +404,8 @@ namespace PPE_DLSS
 
                     param.Set("FrameTimeDeltaInMsec", frameTimeMs);
                     param.Set("Reset", (uint)0);
+                    param.Set("MV.Scale.X", RenderWidth * 0.5f);
+                    param.Set("MV.Scale.Y", RenderHeight * 0.5f);
                     param.Set("Jitter.Offset.X", 0.0f);
                     param.Set("Jitter.Offset.Y", 0.0f);
                 }
@@ -495,14 +547,21 @@ namespace PPE_DLSS
                 }
                 if (_stageLogCooldown-- <= 0)
                 {
-                    _stageLogCooldown = 120;
-                    NativeLog($"D3D12 staging codes: color={D3D12BridgeNative.KKS_DLSS12_LastStageCode(0)}(0x{D3D12BridgeNative.KKS_DLSS12_LastStageHRESULT(0):X8}), depth={D3D12BridgeNative.KKS_DLSS12_LastStageCode(1)}(0x{D3D12BridgeNative.KKS_DLSS12_LastStageHRESULT(1):X8}), motion={D3D12BridgeNative.KKS_DLSS12_LastStageCode(2)}(0x{D3D12BridgeNative.KKS_DLSS12_LastStageHRESULT(2):X8})");
+                    _stageLogCooldown = 600;
+                    NativeLog($"D3D12 staging codes: color={D3D12BridgeNative.KKS_DLSS12_LastStageCode(0)}(0x{D3D12BridgeNative.KKS_DLSS12_LastStageHRESULT(0):X8}), depth={D3D12BridgeNative.KKS_DLSS12_LastStageCode(1)}(0x{D3D12BridgeNative.KKS_DLSS12_LastStageHRESULT(1):X8}), motion={D3D12BridgeNative.KKS_DLSS12_LastStageCode(2)}(0x{D3D12BridgeNative.KKS_DLSS12_LastStageHRESULT(2):X8}), output={D3D12BridgeNative.KKS_DLSS12_LastStageCode(3)}(0x{D3D12BridgeNative.KKS_DLSS12_LastStageHRESULT(3):X8})");
                 }
             }
             catch (Exception e)
             {
                 NativeWarn($"D3D12 bridge staging failed: {e.Message}");
             }
+        }
+
+        private void StageBridgeOutput(Texture output)
+        {
+            if (!_bridgeActive || output == null) return;
+            IntPtr ptr = output.GetNativeTexturePtr();
+            if (ptr != IntPtr.Zero) D3D12BridgeNative.KKS_DLSS12_StageD3D11Texture(3, ptr);
         }
 
         private IntPtr GetImmediateContext(IntPtr device)

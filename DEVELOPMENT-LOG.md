@@ -4,6 +4,30 @@
 
 ### 2026-09-07: Strict runtime acceptance gate
 
+### 2026-09-09: Native D3D12 DLSS output path validated in Studio
+
+The official SDK bridge now stages Unity's render-sized color, depth, and
+motion-vector textures plus a UAV-capable output relay. Studio logs report
+`CreateFeature=0x00000001`, repeated `D3D12 Evaluate=success`, and repeated
+`output copy-back=success`. The bridge uses a first-frame-only reset so NGX
+history accumulates across frames. Unity normalized screen-space motion vectors
+are converted to pixel space with `0.5 * (inputWidth, inputHeight)`, matching
+Unity's own motion-blur conversion. Remaining quality work is visual validation
+of MV direction/depth convention during camera and object motion.
+
+The first output-validation build also exposed a configuration mistake: the
+native probe used the DLAA perf-quality value and set NGX output dimensions
+equal to input dimensions. Although Evaluate and copy-back succeeded, that
+configuration was not an upscale. It is now corrected to MaxQuality with
+`OutWidth/OutHeight` read from the shared output relay, so the configured
+render/output pair is submitted to NGX.
+
+The 2026-09-09 Studio log also showed zero remaining Sideloader duplicate
+warnings after quarantining 427 skipped versions, plus the misplaced
+`KKAPI_v1.41.zip` and superseded `KKS_PoseFolders.dll`. The native bridge's
+periodic health logging was reduced from every 120 frames to every 600 frames;
+failures still log immediately.
+
 The current Feeder log proves that NGX initializes, creates a Super Resolution feature, and delivers multiple frames. It also reports a flat depth probe and nearly-zero motion vectors. The project therefore records two separate outcomes: transport/evaluation PASS, strict temporal-input quality FAIL. `tools/verify_dlss_log.ps1` makes this distinction reproducible and exits non-zero until both guides contain useful scene data.
 
 Research also confirmed the boundary of `dlss5-bridge`: mirror mode is designed for an existing native DLSS request, while synthetic mode is a substitute built from ReShade depth and optical flow. It is not an exact KKS-native input path. The native milestone remains a private D3D12 NGX bridge with real KKS color/depth/MV/jitter/exposure capture and synchronized output copy-back.

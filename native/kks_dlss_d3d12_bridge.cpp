@@ -8,6 +8,7 @@
 #include <cstdio>
 #include "third_party/DLSS/include/nvsdk_ngx.h"
 #include "third_party/DLSS/include/nvsdk_ngx_params.h"
+#include "third_party/DLSS/include/nvsdk_ngx_helpers.h"
 
 namespace
 {
@@ -28,6 +29,7 @@ namespace
     NVSDK_NGX_Parameter* g_params = nullptr;
     NVSDK_NGX_Handle* g_handle = nullptr;
     bool g_featureAttempted = false;
+    bool g_firstEval = true;
     char g_capabilityReport[256] = "Capabilities not queried";
     ID3D12Resource* g_color = nullptr;
     ID3D12Resource* g_depth = nullptr;
@@ -64,6 +66,7 @@ namespace
             g_handle = nullptr;
         }
         g_featureAttempted = false;
+        g_firstEval = true;
         if (g_params)
         {
             auto destroy = &NVSDK_NGX_D3D12_DestroyParameters;
@@ -133,8 +136,11 @@ namespace
             available, availableResult, needsDriver, driverResult, initResult, featureResult);
 
         const bool sharedInputs = g_slots[0].imported12 && g_slots[1].imported12 && g_slots[2].imported12;
+        const bool sharedOutput = g_slots[3].imported12 != nullptr;
         const UINT width = sharedInputs ? g_slots[0].desc.Width : 1280;
         const UINT height = sharedInputs ? g_slots[0].desc.Height : 720;
+        const UINT outputWidth = sharedOutput ? g_slots[3].desc.Width : width;
+        const UINT outputHeight = sharedOutput ? g_slots[3].desc.Height : height;
         auto makeTexture = [&](DXGI_FORMAT format, D3D12_RESOURCE_FLAGS flags, D3D12_RESOURCE_STATES state, ID3D12Resource** result)
         {
             D3D12_HEAP_PROPERTIES heap{};
@@ -154,7 +160,7 @@ namespace
         if ((!sharedInputs && FAILED(makeTexture(DXGI_FORMAT_R8G8B8A8_UNORM, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, &g_color))) ||
             (!sharedInputs && FAILED(makeTexture(DXGI_FORMAT_R32_FLOAT, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, &g_depth))) ||
             (!sharedInputs && FAILED(makeTexture(DXGI_FORMAT_R16G16_FLOAT, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, &g_motion))) ||
-            FAILED(makeTexture(DXGI_FORMAT_R8G8B8A8_UNORM, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, &g_output)))
+            (!sharedOutput && FAILED(makeTexture(DXGI_FORMAT_R8G8B8A8_UNORM, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, &g_output))))
         {
             g_feature = NVSDK_NGX_Result_FAIL_PlatformError;
             return false;
@@ -162,11 +168,14 @@ namespace
 
         g_params->Set("Width", width);
         g_params->Set("Height", height);
-        g_params->Set("OutWidth", width);
-        g_params->Set("OutHeight", height);
+        g_params->Set("OutWidth", outputWidth);
+        g_params->Set("OutHeight", outputHeight);
         g_params->Set("CreationNodeMask", (unsigned int)1);
         g_params->Set("VisibilityNodeMask", (unsigned int)1);
-        g_params->Set("PerfQualityValue", (int)NVSDK_NGX_PerfQuality_Value_DLAA);
+        // Use a real super-resolution mode. DLAA keeps input/output at the
+        // same size and was the reason the first successful frames showed no
+        // visible upscale effect.
+        g_params->Set("PerfQualityValue", (int)NVSDK_NGX_PerfQuality_Value_MaxQuality);
         // KKS supplies full-resolution guide relays. Keep creation flags to the
         // base HDR contract until the live depth convention is independently
         // measured; incorrect guide flags make NGX reject the feature outright.
@@ -175,12 +184,17 @@ namespace
         g_params->Set("Reset", (int)1);
         g_params->Set("Jitter.Offset.X", 0.0f);
         g_params->Set("Jitter.Offset.Y", 0.0f);
-        g_params->Set("MV.Scale.X", 1.0f);
-        g_params->Set("MV.Scale.Y", 1.0f);
+        // Unity's _CameraMotionVectorsTexture stores normalized screen-space
+        // displacement. NGX expects pixel-space displacement; the same
+        // conversion used by Unity's MotionBlur pass is v * 0.5 * (w, h).
+        const float mvScaleX = width * 0.5f;
+        const float mvScaleY = height * 0.5f;
+        g_params->Set("MV.Scale.X", mvScaleX);
+        g_params->Set("MV.Scale.Y", mvScaleY);
         g_params->Set("Color", sharedInputs ? g_slots[0].imported12 : g_color);
         g_params->Set("Depth", sharedInputs ? g_slots[1].imported12 : g_depth);
         g_params->Set("MotionVectors", sharedInputs ? g_slots[2].imported12 : g_motion);
-        g_params->Set("Output", g_output);
+        g_params->Set("Output", sharedOutput ? g_slots[3].imported12 : g_output);
 
         g_feature = guarded([&]() { return create(g_list, NVSDK_NGX_Feature_SuperSampling, g_params, &g_handle); });
         if (g_feature != NVSDK_NGX_Result_Success || !g_handle) return false;
@@ -205,6 +219,37 @@ namespace
         return true;
     }
 
+    bool evaluateTestFrame()
+    {
+        if (!g_handle || !g_params || !g_queue || !g_allocator || !g_list ||
+            !g_slots[0].imported12 || !g_slots[1].imported12 || !g_slots[2].imported12 ||
+            (!g_slots[3].imported12 && !g_output))
+            return false;
+        if (FAILED(g_allocator->Reset()) || FAILED(g_list->Reset(g_allocator, nullptr))) return false;
+        NVSDK_NGX_D3D12_DLSS_Eval_Params eval{};
+        eval.Feature.pInColor = g_slots[0].imported12;
+        eval.Feature.pInOutput = g_slots[3].imported12 ? g_slots[3].imported12 : g_output;
+        eval.pInDepth = g_slots[1].imported12;
+        eval.pInMotionVectors = g_slots[2].imported12;
+        eval.InRenderSubrectDimensions.Width = g_slots[0].desc.Width;
+        eval.InRenderSubrectDimensions.Height = g_slots[0].desc.Height;
+        eval.InMVScaleX = g_slots[0].desc.Width * 0.5f;
+        eval.InMVScaleY = g_slots[0].desc.Height * 0.5f;
+        eval.InFrameTimeDeltaInMsec = 16.667f;
+        // Reset history only for the first frame after feature creation. A
+        // permanent reset would disable temporal accumulation and make the
+        // motion-vector input effectively useless.
+        eval.InReset = g_firstEval ? 1 : 0;
+        eval.InToneMapperType = NVSDK_NGX_TONEMAPPER_STRING;
+        NVSDK_NGX_Result r = NGX_D3D12_EVALUATE_DLSS_EXT(g_list, g_handle, g_params, &eval);
+        if (r != NVSDK_NGX_Result_Success || FAILED(g_list->Close())) { g_feature = r; return false; }
+        ID3D12CommandList* lists[] = {g_list}; g_queue->ExecuteCommandLists(1, lists);
+        if (FAILED(g_queue->Signal(g_fence, ++g_fenceValue)) || FAILED(g_fence->SetEventOnCompletion(g_fenceValue, g_fenceEvent))) return false;
+        bool completed = WaitForSingleObject(g_fenceEvent, 5000) == WAIT_OBJECT_0;
+        if (completed) g_firstEval = false;
+        return completed;
+    }
+
     bool ensureSharedSlot(unsigned int slotIndex, ID3D11Texture2D* source)
     {
         if (slotIndex >= 4 || !source || !g_d3d11 || !g_device) { if (slotIndex < 4) g_stageCodes[slotIndex] = 1; return false; }
@@ -221,7 +266,11 @@ namespace
             relayDesc.MipLevels = 1;
             relayDesc.ArraySize = 1;
             relayDesc.Usage = D3D11_USAGE_DEFAULT;
-            relayDesc.BindFlags = 0;
+            // NGX writes the output through an unordered-access view. Unity's
+            // output RT is created with random-write enabled, but the relay
+            // descriptor must carry the UAV bind flag as well or the imported
+            // D3D12 resource is rejected with RWFlagMissing (0xBAD00009).
+            relayDesc.BindFlags = slotIndex == 3 ? D3D11_BIND_UNORDERED_ACCESS : 0;
             relayDesc.CPUAccessFlags = 0;
             relayDesc.SampleDesc.Count = 1;
             relayDesc.SampleDesc.Quality = 0;
@@ -236,13 +285,18 @@ namespace
             if (FAILED(g_device->OpenSharedHandle(slot.handle, IID_PPV_ARGS(&slot.imported12)))) { g_stageCodes[slotIndex] = 6; return false; }
             slot.desc = sourceDesc;
         }
-        if (sourceDesc.SampleDesc.Count > 1)
-            g_d3d11Context->ResolveSubresource(slot.relay11, 0, source, 0, sourceDesc.Format);
-        else
-            g_d3d11Context->CopyResource(slot.relay11, source);
+        // Slot 3 is the DLSS output relay; it is written by NGX and must not
+        // be overwritten with the pre-existing Unity target contents.
+        if (slotIndex != 3)
+        {
+            if (sourceDesc.SampleDesc.Count > 1)
+                g_d3d11Context->ResolveSubresource(slot.relay11, 0, source, 0, sourceDesc.Format);
+            else
+                g_d3d11Context->CopyResource(slot.relay11, source);
+        }
         g_d3d11Context->Flush();
         g_stageCodes[slotIndex] = 8;
-        if (!g_handle && g_slots[0].imported12 && g_slots[1].imported12 && g_slots[2].imported12)
+        if (!g_handle && g_slots[0].imported12 && g_slots[1].imported12 && g_slots[2].imported12 && g_slots[3].imported12)
             createTestFeature();
         return true;
     }
@@ -325,6 +379,24 @@ extern "C" __declspec(dllexport) unsigned int __cdecl KKS_DLSS12_ProbeFeature()
     std::lock_guard<std::mutex> lock(g_mutex);
     if (g_last == NVSDK_NGX_Result_Success) createTestFeature();
     return static_cast<unsigned int>(g_feature);
+}
+
+extern "C" __declspec(dllexport) unsigned int __cdecl KKS_DLSS12_ProbeEvaluate()
+{
+    std::lock_guard<std::mutex> lock(g_mutex);
+    return evaluateTestFrame() ? 1u : 0u;
+}
+
+extern "C" __declspec(dllexport) unsigned int __cdecl KKS_DLSS12_CopyOutputToD3D11(void* target)
+{
+    std::lock_guard<std::mutex> lock(g_mutex);
+    if (!target || !g_d3d11Context || !g_slots[3].relay11) return 0;
+    ID3D11Resource* dst = reinterpret_cast<ID3D11Resource*>(target);
+    D3D11_RESOURCE_DIMENSION dim{}; dst->GetType(&dim);
+    if (dim != D3D11_RESOURCE_DIMENSION_TEXTURE2D) return 0;
+    g_d3d11Context->CopyResource(dst, g_slots[3].relay11);
+    g_d3d11Context->Flush();
+    return 1;
 }
 
 extern "C" __declspec(dllexport) const char* __cdecl KKS_DLSS12_CapabilityReport()

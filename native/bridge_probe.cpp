@@ -21,6 +21,7 @@ int wmain(int argc, wchar_t** argv)
     auto feature = reinterpret_cast<FeatureFn>(GetProcAddress(bridge, "KKS_DLSS12_LastFeatureResult"));
     auto shutdown = reinterpret_cast<ShutdownFn>(GetProcAddress(bridge, "KKS_DLSS12_Shutdown"));
     auto probe = reinterpret_cast<FeatureFn>(GetProcAddress(bridge, "KKS_DLSS12_ProbeFeature"));
+    auto evaluate = reinterpret_cast<FeatureFn>(GetProcAddress(bridge, "KKS_DLSS12_ProbeEvaluate"));
     auto report = reinterpret_cast<const char* (__cdecl *)()>(GetProcAddress(bridge, "KKS_DLSS12_CapabilityReport"));
     if (!init || !last || !appId || !feature || !shutdown)
     {
@@ -32,6 +33,7 @@ int wmain(int argc, wchar_t** argv)
     std::printf("init result=0x%08X last=0x%08X appId=0x%llX feature=0x%08X\n", result, last(), appId(), feature());
     unsigned int created = result == 1 && probe ? probe() : 0;
     std::printf("isolated CreateFeature=0x%08X (no evaluation/output test)\n", created);
+    std::printf("isolated Evaluate=%s (requires staged live textures)\n", evaluate && evaluate() ? "attempted" : "not available");
     if (report) std::printf("%s\n", report());
     shutdown();
     FreeLibrary(bridge);

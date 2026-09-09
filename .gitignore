@@ -7,5 +7,6 @@ native/*.obj
 native/*.dll
 native/*.exp
 native/*.lib
+*.obj
 backups/
 *.zip
