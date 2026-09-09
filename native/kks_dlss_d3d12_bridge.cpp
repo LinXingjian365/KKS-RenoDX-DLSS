@@ -180,10 +180,14 @@ namespace
         // same size and was the reason the first successful frames showed no
         // visible upscale effect.
         g_params->Set("PerfQualityValue", (int)NVSDK_NGX_PerfQuality_Value_MaxQuality);
-        // KKS supplies full-resolution guide relays. Keep creation flags to the
-        // base HDR contract until the live depth convention is independently
-        // measured; incorrect guide flags make NGX reject the feature outright.
-        g_params->Set("DLSS.Feature.Create.Flags", (int)NVSDK_NGX_DLSS_Feature_Flags_IsHDR);
+        // KKS supplies live guide relays; creation flags include HDR and the
+        // measured Unity reversed-Z depth convention.
+        // Unity's D3D11 renderer uses a reversed-Z depth buffer on the KKS
+        // runtime. Tell NGX explicitly so the captured depth guide is
+        // interpreted with the correct near/far convention.
+        const int createFlags = (int)(NVSDK_NGX_DLSS_Feature_Flags_IsHDR |
+            NVSDK_NGX_DLSS_Feature_Flags_DepthInverted);
+        g_params->Set("DLSS.Feature.Create.Flags", createFlags);
         g_params->Set("DLSS.Enable.Output.Subrects", (int)0);
         g_params->Set("Reset", (int)1);
         g_params->Set("Jitter.Offset.X", 0.0f);
@@ -200,8 +204,8 @@ namespace
         g_params->Set("MotionVectors", sharedInputs ? g_slots[2].imported12 : g_motion);
         g_params->Set("Output", sharedOutput ? g_slots[3].imported12 : g_output);
         std::snprintf(g_capabilityReport, sizeof(g_capabilityReport),
-            "SR available=%d, needsDriver=%d, initResult=0x%08X; NGX input=%ux%u output=%ux%u mode=MaxQuality MVScale=%.1fx%.1f",
-            available, needsDriver, initResult, width, height, outputWidth, outputHeight,
+            "SR available=%d, needsDriver=%d, initResult=0x%08X; NGX input=%ux%u output=%ux%u mode=MaxQuality flags=0x%X MVScale=%.1fx%.1f",
+            available, needsDriver, initResult, width, height, outputWidth, outputHeight, createFlags,
             mvScaleX, mvScaleY);
 
         g_feature = guarded([&]() { return create(g_list, NVSDK_NGX_Feature_SuperSampling, g_params, &g_handle); });
