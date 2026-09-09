@@ -26,6 +26,8 @@ namespace
     ID3D12Fence* g_fence = nullptr;
     HANDLE g_fenceEvent = nullptr;
     unsigned long long g_fenceValue = 0;
+    unsigned long long g_evalCount = 0;
+    double g_lastEvalMs = 0.0;
     NVSDK_NGX_Parameter* g_params = nullptr;
     NVSDK_NGX_Handle* g_handle = nullptr;
     bool g_featureAttempted = false;
@@ -67,6 +69,8 @@ namespace
         }
         g_featureAttempted = false;
         g_firstEval = true;
+        g_evalCount = 0;
+        g_lastEvalMs = 0.0;
         if (g_params)
         {
             auto destroy = &NVSDK_NGX_D3D12_DestroyParameters;
@@ -230,6 +234,9 @@ namespace
             (!g_slots[3].imported12 && !g_output))
             return false;
         if (FAILED(g_allocator->Reset()) || FAILED(g_list->Reset(g_allocator, nullptr))) return false;
+        LARGE_INTEGER tickStart{}, tickEnd{}, frequency{};
+        QueryPerformanceFrequency(&frequency);
+        QueryPerformanceCounter(&tickStart);
         NVSDK_NGX_D3D12_DLSS_Eval_Params eval{};
         eval.Feature.pInColor = g_slots[0].imported12;
         eval.Feature.pInOutput = g_slots[3].imported12 ? g_slots[3].imported12 : g_output;
@@ -250,7 +257,14 @@ namespace
         ID3D12CommandList* lists[] = {g_list}; g_queue->ExecuteCommandLists(1, lists);
         if (FAILED(g_queue->Signal(g_fence, ++g_fenceValue)) || FAILED(g_fence->SetEventOnCompletion(g_fenceValue, g_fenceEvent))) return false;
         bool completed = WaitForSingleObject(g_fenceEvent, 5000) == WAIT_OBJECT_0;
-        if (completed) g_firstEval = false;
+        QueryPerformanceCounter(&tickEnd);
+        if (completed)
+        {
+            g_firstEval = false;
+            ++g_evalCount;
+            g_lastEvalMs = frequency.QuadPart ?
+                (1000.0 * static_cast<double>(tickEnd.QuadPart - tickStart.QuadPart) / static_cast<double>(frequency.QuadPart)) : 0.0;
+        }
         return completed;
     }
 
@@ -401,6 +415,18 @@ extern "C" __declspec(dllexport) unsigned int __cdecl KKS_DLSS12_CopyOutputToD3D
     g_d3d11Context->CopyResource(dst, g_slots[3].relay11);
     g_d3d11Context->Flush();
     return 1;
+}
+
+extern "C" __declspec(dllexport) unsigned long long __cdecl KKS_DLSS12_EvalCount()
+{
+    std::lock_guard<std::mutex> lock(g_mutex);
+    return g_evalCount;
+}
+
+extern "C" __declspec(dllexport) double __cdecl KKS_DLSS12_LastEvalMilliseconds()
+{
+    std::lock_guard<std::mutex> lock(g_mutex);
+    return g_lastEvalMs;
 }
 
 extern "C" __declspec(dllexport) const char* __cdecl KKS_DLSS12_CapabilityReport()

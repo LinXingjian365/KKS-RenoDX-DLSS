@@ -46,6 +46,12 @@ namespace PPE_DLSS
         internal static extern uint KKS_DLSS12_CopyOutputToD3D11(IntPtr target);
 
         [DllImport(DLL, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern ulong KKS_DLSS12_EvalCount();
+
+        [DllImport(DLL, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern double KKS_DLSS12_LastEvalMilliseconds();
+
+        [DllImport(DLL, CallingConvention = CallingConvention.Cdecl)]
         internal static extern void KKS_DLSS12_Shutdown();
     }
 
@@ -368,7 +374,7 @@ namespace PPE_DLSS
                 if (eval != 1 || _bridgeEvalLogCooldown-- <= 0)
                 {
                     _bridgeEvalLogCooldown = 600;
-                    NativeLog($"D3D12 Evaluate={(eval == 1 ? "success" : "failed")}, outputStage={D3D12BridgeNative.KKS_DLSS12_LastStageCode(3)}(0x{D3D12BridgeNative.KKS_DLSS12_LastStageHRESULT(3):X8})");
+                    NativeLog($"D3D12 Evaluate={(eval == 1 ? "success" : "failed")}, outputStage={D3D12BridgeNative.KKS_DLSS12_LastStageCode(3)}(0x{D3D12BridgeNative.KKS_DLSS12_LastStageHRESULT(3):X8}), gpuWaitMs={D3D12BridgeNative.KKS_DLSS12_LastEvalMilliseconds():F2}, evalFrames={D3D12BridgeNative.KKS_DLSS12_EvalCount()}");
                 }
                 if (eval == 1)
                 {
