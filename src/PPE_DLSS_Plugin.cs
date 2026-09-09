@@ -179,6 +179,7 @@ namespace PPE_DLSS
         private int _inputProbeCooldown;
         private int _guideWarningCooldown;
         private bool _guideValidationDone;
+        private int _guideProbeCooldown;
         private bool _nativeOutputUsable = true;
         private RenderTexture _outputProbeRT;
         private Texture2D _outputProbeTexture;
@@ -213,6 +214,7 @@ namespace PPE_DLSS
             _inputColorReady = false;
             _inputProbeCooldown = 0;
             _guideValidationDone = false;
+            _guideProbeCooldown = 0;
             _nativeOutputUsable = true;
             _renderEntryLogged = false;
             _lastFrameTime = Time.realtimeSinceStartup;
@@ -288,6 +290,7 @@ namespace PPE_DLSS
             _inputColorReady = false;
             _inputProbeCooldown = 0;
             _guideValidationDone = false;
+            _guideProbeCooldown = 0;
             _nativeOutputUsable = true;
             PPE_DLSS_Plugin.Log.LogInfo("DLSS init successful!");
         }
@@ -356,10 +359,12 @@ namespace PPE_DLSS
                         (sceneMotionVectors == null ? "motion-vectors" : ""));
                 }
 
-                if (!_guideValidationDone && sceneDepth != null && sceneMotionVectors != null)
+                if (sceneDepth != null && sceneMotionVectors != null &&
+                    (!_guideValidationDone || _guideProbeCooldown-- <= 0))
                 {
                     _guideValidationDone = true;
-                    PPE_DLSS_Plugin.Log.LogInfo($"DLSS guide validation: depthMax={SampleTexture(sceneDepth):F5}, motionMax={SampleTexture(sceneMotionVectors):F5}");
+                    _guideProbeCooldown = 120;
+                    PPE_DLSS_Plugin.Log.LogInfo($"DLSS guide probe: depthMax={SampleTexture(sceneDepth):F5}, motionMax={SampleTexture(sceneMotionVectors):F5}");
                 }
 
                 // Execute DLSS with the live Unity guide resources.
