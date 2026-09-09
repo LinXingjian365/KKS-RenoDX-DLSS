@@ -171,6 +171,8 @@ namespace PPE_DLSS
         private bool _outputReady;
         private bool _outputValidationDone;
         private bool _inputValidationDone;
+        private bool _inputColorReady;
+        private int _inputProbeCooldown;
         private int _guideWarningCooldown;
         private bool _nativeOutputUsable = true;
         private RenderTexture _outputProbeRT;
@@ -203,6 +205,8 @@ namespace PPE_DLSS
             _outputReady = false;
             _outputValidationDone = false;
             _inputValidationDone = false;
+            _inputColorReady = false;
+            _inputProbeCooldown = 0;
             _nativeOutputUsable = true;
             _renderEntryLogged = false;
             _lastFrameTime = Time.realtimeSinceStartup;
@@ -275,6 +279,8 @@ namespace PPE_DLSS
             _outputReady = false;
             _outputValidationDone = false;
             _inputValidationDone = false;
+            _inputColorReady = false;
+            _inputProbeCooldown = 0;
             _nativeOutputUsable = true;
             PPE_DLSS_Plugin.Log.LogInfo("DLSS init successful!");
         }
@@ -313,11 +319,20 @@ namespace PPE_DLSS
                 if (colorRT != null)
                 {
                     Graphics.Blit(source, colorRT);
-                    if (!_inputValidationDone)
+                    if (!_inputColorReady && _inputProbeCooldown-- <= 0)
                     {
-                        _inputValidationDone = true;
+                        _inputProbeCooldown = 15;
                         float inputMax = SampleTexture(colorRT);
                         PPE_DLSS_Plugin.Log.LogInfo($"DLSS input color validation: maxChannel={inputMax:F5}");
+                        _inputColorReady = inputMax > 0.0001f;
+                        _inputValidationDone = _inputColorReady;
+                    }
+                    if (!_inputColorReady)
+                    {
+                        // Do not feed the first black camera transition frame
+                        // into NGX; wait until Unity has produced real color.
+                        Graphics.Blit(source, destination);
+                        return;
                     }
                 }
 
