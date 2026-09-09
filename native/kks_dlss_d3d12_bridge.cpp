@@ -190,6 +190,7 @@ namespace
         g_params->Set("DLSS.Feature.Create.Flags", createFlags);
         g_params->Set("DLSS.Enable.Output.Subrects", (int)0);
         g_params->Set("Reset", (int)1);
+        g_params->Set("Sharpness", 0.15f);
         g_params->Set("Jitter.Offset.X", 0.0f);
         g_params->Set("Jitter.Offset.Y", 0.0f);
         // Unity's _CameraMotionVectorsTexture stores normalized screen-space
@@ -204,7 +205,7 @@ namespace
         g_params->Set("MotionVectors", sharedInputs ? g_slots[2].imported12 : g_motion);
         g_params->Set("Output", sharedOutput ? g_slots[3].imported12 : g_output);
         std::snprintf(g_capabilityReport, sizeof(g_capabilityReport),
-            "SR available=%d, needsDriver=%d, initResult=0x%08X; NGX input=%ux%u output=%ux%u mode=MaxQuality flags=0x%X MVScale=%.1fx%.1f",
+            "SR available=%d, needsDriver=%d, initResult=0x%08X; NGX input=%ux%u output=%ux%u mode=MaxQuality sharpness=0.15 flags=0x%X MVScale=%.1fx%.1f",
             available, needsDriver, initResult, width, height, outputWidth, outputHeight, createFlags,
             mvScaleX, mvScaleY);
 
@@ -242,6 +243,7 @@ namespace
         QueryPerformanceFrequency(&frequency);
         QueryPerformanceCounter(&tickStart);
         NVSDK_NGX_D3D12_DLSS_Eval_Params eval{};
+        eval.Feature.InSharpness = 0.15f;
         eval.Feature.pInColor = g_slots[0].imported12;
         eval.Feature.pInOutput = g_slots[3].imported12 ? g_slots[3].imported12 : g_output;
         eval.pInDepth = g_slots[1].imported12;
