@@ -37,6 +37,7 @@ namespace
     ID3D12Resource* g_depth = nullptr;
     ID3D12Resource* g_motion = nullptr;
     ID3D12Resource* g_output = nullptr;
+    D3D12_RESOURCE_STATES g_outputState = D3D12_RESOURCE_STATE_COMMON;
     ID3D11Device* g_d3d11 = nullptr;
     ID3D11DeviceContext* g_d3d11Context = nullptr;
 
@@ -104,6 +105,7 @@ namespace
         g_evalCount = 0;
         g_lastEvalMs = 0.0;
         if (g_output) { g_output->Release(); g_output = nullptr; }
+        g_outputState = D3D12_RESOURCE_STATE_COMMON;
         if (g_motion) { g_motion->Release(); g_motion = nullptr; }
         if (g_depth) { g_depth->Release(); g_depth = nullptr; }
         if (g_color) { g_color->Release(); g_color = nullptr; }
@@ -171,14 +173,14 @@ namespace
         const UINT height = sharedInputs ? g_slots[0].desc.Height : 720;
         const UINT outputWidth = sharedOutput ? g_slots[3].desc.Width : width;
         const UINT outputHeight = sharedOutput ? g_slots[3].desc.Height : height;
-        auto makeTexture = [&](DXGI_FORMAT format, D3D12_RESOURCE_FLAGS flags, D3D12_RESOURCE_STATES state, ID3D12Resource** result)
+        auto makeTexture = [&](DXGI_FORMAT format, D3D12_RESOURCE_FLAGS flags, D3D12_RESOURCE_STATES state, ID3D12Resource** result, UINT texWidth, UINT texHeight)
         {
             D3D12_HEAP_PROPERTIES heap{};
             heap.Type = D3D12_HEAP_TYPE_DEFAULT;
             D3D12_RESOURCE_DESC desc{};
             desc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
-            desc.Width = width;
-            desc.Height = height;
+            desc.Width = texWidth;
+            desc.Height = texHeight;
             desc.DepthOrArraySize = 1;
             desc.MipLevels = 1;
             desc.Format = format;
@@ -187,14 +189,18 @@ namespace
             desc.Flags = flags;
             return g_device->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &desc, state, nullptr, IID_PPV_ARGS(result));
         };
-        if ((!sharedInputs && FAILED(makeTexture(DXGI_FORMAT_R8G8B8A8_UNORM, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, &g_color))) ||
-            (!sharedInputs && FAILED(makeTexture(DXGI_FORMAT_R32_FLOAT, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, &g_depth))) ||
-            (!sharedInputs && FAILED(makeTexture(DXGI_FORMAT_R16G16_FLOAT, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, &g_motion))) ||
-            (!sharedOutput && FAILED(makeTexture(DXGI_FORMAT_R8G8B8A8_UNORM, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, &g_output))))
+        if ((!sharedInputs && FAILED(makeTexture(DXGI_FORMAT_R8G8B8A8_UNORM, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, &g_color, width, height))) ||
+            (!sharedInputs && FAILED(makeTexture(DXGI_FORMAT_R32_FLOAT, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, &g_depth, width, height))) ||
+            (!sharedInputs && FAILED(makeTexture(DXGI_FORMAT_R16G16_FLOAT, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, &g_motion, width, height))) ||
+            // Keep the NGX output on a private D3D12 UAV. The shared relay is
+            // copied only after the fence-safe evaluation, avoiding keyed
+            // mutex/UAV interop limitations on the NGX write path.
+            FAILED(makeTexture(DXGI_FORMAT_R16G16B16A16_FLOAT, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, &g_output, outputWidth, outputHeight)))
         {
             g_feature = NVSDK_NGX_Result_FAIL_PlatformError;
             return false;
         }
+        g_outputState = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
 
         g_params->Set("Width", width);
         g_params->Set("Height", height);
@@ -229,7 +235,7 @@ namespace
         g_params->Set("Color", sharedInputs ? g_slots[0].imported12 : g_color);
         g_params->Set("Depth", sharedInputs ? g_slots[1].imported12 : g_depth);
         g_params->Set("MotionVectors", sharedInputs ? g_slots[2].imported12 : g_motion);
-        g_params->Set("Output", sharedOutput ? g_slots[3].imported12 : g_output);
+        g_params->Set("Output", g_output);
         std::snprintf(g_capabilityReport, sizeof(g_capabilityReport),
             "SR available=%d, needsDriver=%d, initResult=0x%08X; NGX input=%ux%u output=%ux%u mode=MaxQuality sharpness=0.15 flags=0x%X MVScale=%.1fx%.1f",
             available, needsDriver, initResult, width, height, outputWidth, outputHeight, createFlags,
@@ -262,7 +268,7 @@ namespace
     {
         if (!g_handle || !g_params || !g_queue || !g_allocator || !g_list ||
             !g_slots[0].imported12 || !g_slots[1].imported12 || !g_slots[2].imported12 ||
-            (!g_slots[3].imported12 && !g_output))
+            !g_slots[3].imported12 || !g_output)
             return false;
         if (FAILED(g_allocator->Reset()) || FAILED(g_list->Reset(g_allocator, nullptr))) return false;
         LARGE_INTEGER tickStart{}, tickEnd{}, frequency{};
@@ -271,7 +277,7 @@ namespace
         NVSDK_NGX_D3D12_DLSS_Eval_Params eval{};
         eval.Feature.InSharpness = 0.15f;
         eval.Feature.pInColor = g_slots[0].imported12;
-        eval.Feature.pInOutput = g_slots[3].imported12 ? g_slots[3].imported12 : g_output;
+        eval.Feature.pInOutput = g_output;
         eval.pInDepth = g_slots[1].imported12;
         eval.pInMotionVectors = g_slots[2].imported12;
         eval.InRenderSubrectDimensions.Width = g_slots[0].desc.Width;
@@ -304,14 +310,25 @@ namespace
         addBarrier(g_slots[0], D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
         addBarrier(g_slots[1], D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
         addBarrier(g_slots[2], D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
-        addBarrier(g_slots[3], D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+        if (g_outputState != D3D12_RESOURCE_STATE_UNORDERED_ACCESS)
+        {
+            auto& barrier = toNgx[toNgxCount++];
+            barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+            barrier.Transition.pResource = g_output;
+            barrier.Transition.StateBefore = g_outputState;
+            barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+            barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+            g_outputState = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+        }
         if (toNgxCount) g_list->ResourceBarrier(toNgxCount, toNgx);
 
         NVSDK_NGX_Result r = NGX_D3D12_EVALUATE_DLSS_EXT(g_list, g_handle, g_params, &eval);
 
-        // Return ownership to D3D11 before signaling the fence. This makes
-        // the following CopyResource and next-frame staging operations safe.
-        D3D12_RESOURCE_BARRIER fromNgx[4]{};
+        // Return input ownership to D3D11 and copy the private NGX output to
+        // the shared relay before signaling the fence. This keeps NGX away
+        // from the keyed-mutex output allocation while preserving the live
+        // D3D11 copy-back contract.
+        D3D12_RESOURCE_BARRIER fromNgx[8]{};
         UINT fromNgxCount = 0;
         auto restoreCommon = [&](SharedSlot& slot)
         {
@@ -327,7 +344,42 @@ namespace
         restoreCommon(g_slots[0]);
         restoreCommon(g_slots[1]);
         restoreCommon(g_slots[2]);
-        restoreCommon(g_slots[3]);
+        if (r == NVSDK_NGX_Result_Success)
+        {
+            auto& outputToCopy = fromNgx[fromNgxCount++];
+            outputToCopy.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+            outputToCopy.Transition.pResource = g_output;
+            outputToCopy.Transition.StateBefore = g_outputState;
+            outputToCopy.Transition.StateAfter = D3D12_RESOURCE_STATE_COPY_SOURCE;
+            outputToCopy.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+            g_outputState = D3D12_RESOURCE_STATE_COPY_SOURCE;
+
+            auto& relayToCopy = fromNgx[fromNgxCount++];
+            relayToCopy.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+            relayToCopy.Transition.pResource = g_slots[3].imported12;
+            relayToCopy.Transition.StateBefore = g_slots[3].state;
+            relayToCopy.Transition.StateAfter = D3D12_RESOURCE_STATE_COPY_DEST;
+            relayToCopy.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+            g_slots[3].state = D3D12_RESOURCE_STATE_COPY_DEST;
+            if (fromNgxCount) g_list->ResourceBarrier(fromNgxCount, fromNgx);
+            g_list->CopyResource(g_slots[3].imported12, g_output);
+
+            D3D12_RESOURCE_BARRIER outputRestore[2]{};
+            outputRestore[0].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+            outputRestore[0].Transition.pResource = g_output;
+            outputRestore[0].Transition.StateBefore = g_outputState;
+            outputRestore[0].Transition.StateAfter = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+            outputRestore[0].Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+            outputRestore[1].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+            outputRestore[1].Transition.pResource = g_slots[3].imported12;
+            outputRestore[1].Transition.StateBefore = g_slots[3].state;
+            outputRestore[1].Transition.StateAfter = D3D12_RESOURCE_STATE_COMMON;
+            outputRestore[1].Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+            g_outputState = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+            g_slots[3].state = D3D12_RESOURCE_STATE_COMMON;
+            g_list->ResourceBarrier(2, outputRestore);
+            fromNgxCount = 0;
+        }
         if (fromNgxCount) g_list->ResourceBarrier(fromNgxCount, fromNgx);
 
         HRESULT closeHr = g_list->Close();
