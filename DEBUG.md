@@ -1,6 +1,23 @@
 # KKS DLSS Debug Record
 
-This file records the failed native experiments and the verified workaround. A loaded DLL or visible toggle is not treated as proof that DLSS is rendering.
+This file records the failed experiments and the v3 native acceptance evidence. A loaded DLL or visible toggle is not treated as proof that DLSS is rendering.
+
+## Current v3.0.0 native acceptance
+
+The native D3D12 bridge is now validated in the KKS Studio runtime. A release
+run must show all of the following in the same log:
+
+```text
+MVScale=1.0x1.0
+D3D12 Evaluate=success
+D3D12 output copy-back=success
+DLSS output validation: maxChannel>0, usable=True
+staging codes: color=8, depth=8, motion=8, output=8
+```
+
+The measured reference run reached 602 evaluations and 602 private output
+copies with zero copy failures. The older sections below are historical
+failure records from before the native bridge was completed.
 
 ## Strict acceptance rule
 
@@ -9,7 +26,8 @@ The repository now separates two claims:
 - **Transport/evaluation success:** `session ready`, `feature ready`, and at least three `frame N delivered` lines.
 - **Temporal-input quality success:** the same markers plus non-flat scene depth and non-zero motion vectors.
 
-Run `tools/verify_dlss_log.ps1`. The current KKS log passes the first claim and fails the second. This is intentional: NGX is running, but the guides are not yet trustworthy enough to call the result accurate native DLSS.
+Run `tools/verify_dlss_log.ps1` against a captured log. It now recognizes the
+v3 native markers as well as the archived Feeder route markers.
 
 ### 2026-09-07 native D3D11 retry result
 
@@ -33,7 +51,7 @@ The bridge now exposes the next transport primitives: `KKS_DLSS12_AttachD3D11`, 
 - Verified NVIDIA driver: 616.56
 - ReShade 6.8 with add-on support
 
-## Root cause: why the native BepInEx DLSS path cannot work reliably
+## Historical root cause: why the pre-v3 native BepInEx path could not work reliably
 
 KKS does not create the complete DLSS feature contract. A real DLSS integration needs a render/output resolution pair, a color resource, scene depth with correct flags, temporal motion vectors, jitter history, a D3D12 device/queue/command-list path, and an output copy-back. KKS's Built-in/Forward renderer exposes none of this as a native DLSS request.
 
@@ -109,7 +127,7 @@ The native test was run with Feeder/RenoDX add-ons removed from the active direc
 
 This is why the native route cannot be declared complete yet. The D3D11 KKS device is valid, but this runtime combination does not accept the in-process D3D11 NGX initialization. The primary route must therefore move the NGX session to a private D3D12 device and bridge Unity's resources, which is the same architectural class as the already-working Feeder but implemented inside the native project.
 
-### Why the current native `PPE_DLSS.dll` is not yet a native-input implementation
+### Historical pre-v3 limitation: native `PPE_DLSS.dll` input path
 
 The repository's experimental source was useful for proving the failure mode, but it is not ready for release as a native solution:
 
@@ -119,7 +137,9 @@ The repository's experimental source was useful for proving the failure mode, bu
 - `ScalableBufferManager.ResizeBuffers` alone does not make every Studio camera and post-processing pass render a valid DLSS input at the requested resolution.
 - The wrapper has no robust D3D11 resource-state/synchronization and output ownership path for the live Unity swapchain.
 
-Therefore its “native” toggle must remain experimental. Making it genuinely native requires a Unity-side input bridge plus correct NGX parameter binding, not another DLL or config switch.
+Those statements describe the pre-v3 proof-of-concept and are retained for
+traceability. The v3 implementation supplies the missing Unity-side capture,
+NGX parameter binding, synchronization, and output ownership path.
 
 ### `dlss5-bridge` is not a magic native-DLSS switch
 

@@ -12,6 +12,41 @@ if (-not (Test-Path -LiteralPath $LogPath -PathType Leaf)) {
 $text = Get-Content -LiteralPath $LogPath -Raw
 $checks = [ordered]@{}
 
+# v3.0 native bridge evidence. Keep the older Feeder checks below so this
+# verifier remains useful for archived/alternate-route logs.
+$nativeMode = $text -match '(?im)NGX input=\d+x\d+ output=\d+x\d+ mode=MaxQuality'
+$nativeEvalCount = ([regex]::Matches($text, '(?im)D3D12 Evaluate=success')).Count
+$nativeOutputUsable = $text -match '(?im)DLSS output validation:\s*maxChannel=([0-9.]+),\s*usable=True'
+$nativeCopyBack = $text -match '(?im)D3D12 output copy-back=success'
+$nativeMvScale = $text -match '(?im)MVScale=1(?:\.0)?x1(?:\.0)?'
+$nativeStaging = $text -match '(?im)staging codes:\s*color=8\(0x00000000\),\s*depth=8\(0x00000000\),\s*motion=8\(0x00000000\),\s*output=8\(0x00000000\)'
+$nativeMotion = $false
+foreach ($m in [regex]::Matches($text, '(?im)motionMax=([0-9.]+)')) {
+    if ([double]$m.Groups[1].Value -gt 0.001) { $nativeMotion = $true; break }
+}
+
+if ($nativeMode) {
+    $checks['native MV scale 1x1'] = $nativeMvScale
+    $checks['native shared staging'] = $nativeStaging
+    $checks['native Evaluate success'] = $nativeEvalCount -ge 3
+    $checks['native output copy-back'] = $nativeCopyBack
+    $checks['native non-zero output'] = $nativeOutputUsable
+    $checks['native motion observed'] = $nativeMotion
+    $nativeOk = $nativeMvScale -and $nativeStaging -and ($nativeEvalCount -ge 3) -and $nativeCopyBack -and $nativeOutputUsable
+    Write-Host "DLSS log: $LogPath"
+    foreach ($entry in $checks.GetEnumerator()) {
+        $state = if ($entry.Value) { 'PASS' } else { 'FAIL' }
+        Write-Host ("[{0}] {1}" -f $state, $entry.Key)
+    }
+    Write-Host ""
+    if ($nativeOk) {
+        Write-Host '[PASS] Native D3D12 NGX bridge produced usable output.'
+        exit 0
+    }
+    Write-Host '[FAIL] Native D3D12 NGX output is not fully proven.'
+    exit 2
+}
+
 $checks['session ready'] = $text -match '(?im)session ready:'
 $checks['feature ready'] = $text -match '(?im)feature ready:'
 $frameCount = ([regex]::Matches($text, '(?im)frame\s+\d+\s+delivered')).Count

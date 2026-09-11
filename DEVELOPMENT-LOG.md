@@ -1,10 +1,27 @@
 # Development Log
 
+## 2026-09-11: Native bridge v3.0.0 release validation
+
+The in-game KKS test now passes the native acceptance gate. The official SDK
+bridge reports `MVScale=1.0x1.0`, `D3D12 Evaluate=success`, and successful
+output copy-back. Output validation reports `maxChannel=0.90588, usable=True`.
+The same run reached 602 evaluations and 602 private output copies with zero
+copy failures; steady-state GPU wait was 7–10 ms after the initialization
+frame. Camera movement produced non-zero motion probes while static frames
+returned near zero, as expected.
+
+The final transport fix was keyed-mutex ownership handoff for the shared
+D3D11/D3D12 relay textures. D3D11 now releases input relays to key 1 after
+staging, D3D12 acquires them for evaluation and returns key 0 after its fence,
+and the output relay follows the inverse handoff for D3D11 copy-back. The
+native plugin version is now v3.0.0 and the repository verifier recognizes the
+native proof markers.
+
 ## 2026-09-05: Native DLSS investigation and verified Feeder route
 
 ### 2026-09-07: Strict runtime acceptance gate
 
-### 2026-09-09: Native D3D12 DLSS output path validated in Studio
+### 2026-09-09: Native D3D12 DLSS output path validated in Studio (bring-up history)
 
 The official SDK bridge now stages Unity's render-sized color, depth, and
 motion-vector textures plus a UAV-capable output relay. Studio logs report

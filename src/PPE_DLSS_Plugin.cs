@@ -7,7 +7,7 @@ using UnityEngine.Rendering;
 
 namespace PPE_DLSS
 {
-    [BepInPlugin("com.user.ppe_dlss", "KKS DLSS Upscaler", "2.1.1")]
+    [BepInPlugin("com.user.ppe_dlss", "KKS DLSS Upscaler", "3.0.0")]
     public class PPE_DLSS_Plugin : BaseUnityPlugin
     {
         public static ManualLogSource Log;
@@ -39,7 +39,7 @@ namespace PPE_DLSS
             ToggleKey = Config.Bind("General", "ToggleKey", new KeyboardShortcut(KeyCode.D, KeyCode.LeftControl), "Toggle DLSS");
             ShowUI = Config.Bind("General", "ShowUI", true, "Show status UI");
 
-            Log.LogInfo("KKS DLSS Upscaler v2.1.1 loaded (native NGX experimental path). Default off, Ctrl+D to enable.");
+            Log.LogInfo("KKS DLSS Upscaler v3.0.0 loaded (native D3D12 NGX path). Default off, Ctrl+D to enable.");
         }
 
         private void Update()

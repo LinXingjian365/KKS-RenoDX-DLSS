@@ -1,63 +1,64 @@
 # KKS RenoDX DLSS
 
-Verified DLSS integration for Koikatsu Sunshine CharaStudio (Unity 2019.4, 64-bit D3D11). The project keeps the native experiment and the working ReShade route documented separately.
+Stable native DLSS Super Resolution integration for Koikatsu Sunshine CharaStudio (v3.0.0). The plugin captures Unity's render-sized color, depth, and motion-vector textures, submits them through an official NVIDIA NGX D3D12 bridge, and presents the synchronized output back through Unity's D3D11 image effect.
 
-## Current verified route: DLSS5-Feeder + RenoDX DLSS5
+## v3.0.0 release status
 
-KKS has no native DLSS feature contract. The working route is:
-
-`ReShade 6.8 add-on support -> LumeniteFX Kernel -> DLSS5-Feeder -> RenoDX DLSS5 -> NVIDIA NGX SuperSampling`
-
-## Release status
-
-The NGX transport, feature creation, and Super Resolution evaluation are verified. That is not yet the same as verified temporal quality: the current KKS capture has a flat depth probe and nearly-zero motion-vector probe. Run `powershell -ExecutionPolicy Bypass -File tools/verify_dlss_log.ps1` after every test. It reports transport success separately from the strict depth/MV quality gate.
-
-This is the route that actually produced the following runtime proof on an RTX 3060 Laptop with driver 616.56:
+The native path has been verified in Studio on an RTX 3060 Laptop GPU with NVIDIA driver 616.56:
 
 ```text
-NGX feature requirements: SuperSampling -> supported
-NVSDK_NGX_D3D12_Init -> 0x00000001 (Success)
-feature ready: 1288x724 -> 1920x1080 DLSS Quality (synthetic jitter)
-frame N delivered (..., DLSS SR, ...)
+NGX input=960x540 output=1920x1080 mode=MaxQuality
+MVScale=1.0x1.0
+D3D12 Evaluate=success
+D3D12 output copy-back=success
+DLSS output validation: maxChannel=0.90588, usable=True
+evalFrames=602, privateCopies=602, privateCopyFailures=0
 ```
 
-`DLSSNR` is the neural-rendering feature used by the RenoDX DLSS5 consumer. It is not, by itself, the same thing as DLSS Super Resolution. The Feeder creates the missing DLSS request so KKS can reach the normal NGX SuperSampling path. See [DLSS5-FEEDER.md](DLSS5-FEEDER.md) for the exact layout and verification procedure.
+The measured steady-state bridge wait is about 7–10 ms on that machine. The first frame can take longer while NGX allocates its history. The plugin keeps the original source visible until the native output passes a non-zero validation check.
 
-The Feeder is an upstream project for this integration: [DLSS5-Feeder](https://github.com/jlrouzies-fr/DLSS5-Feeder). Its documented D3D11 work-resolution `work_upscale=2` path is experimental; this repository records the measured result rather than treating an add-on load as proof.
+## Runtime path
 
-The complete native-DLSS failure ledger and troubleshooting matrix are in [DEBUG.md](DEBUG.md). The chronological engineering record is in [DEVELOPMENT-LOG.md](DEVELOPMENT-LOG.md).
+```text
+KKS D3D11 camera
+  -> Unity color/depth/motion capture
+  -> D3D11 shared relays with keyed-mutex ownership
+  -> official NVIDIA SDK D3D12/NGX Super Resolution
+  -> fenced output relay
+  -> Unity D3D11 output texture
+```
 
-## Native contract status
-
-The community `dlss5-bridge` project is useful evidence for the correct architecture, but its mirror mode is for DX11 games that already submit a native DLSS request. Its synthetic mode can construct a substitute from ReShade depth plus optical-flow motion; that is a valid fallback experiment, not KKS's original motion-vector contract. KKS currently has no native DLSS request, so this repository does not label the Feeder, bridge-synth, or the unfinished `PPE_DLSS.dll` wrapper as "accurate native DLSS".
-
-The exact native route remains an engineering milestone: capture KKS's pre-tonemap color, real scene depth, temporal motion vectors, jitter and exposure; submit those resources through a private D3D12/NGX bridge; then synchronize and copy the result back before presentation. Until the strict verifier passes, the active route is a measured approximation with genuine NGX Super Resolution evaluation.
-
-The native `PPE_DLSS.dll` implementation remains explicitly experimental: its current wrapper is not shipped as a verified native-input solution. The verified working path is still DLSS5-Feeder + RenoDX DLSS5.
-
-## Legacy/native routes
-
-`PPE_DLSS.dll` remains an experimental native NGX path. KKS does not expose the resources and feature contract it needs reliably, so keep its toggle off when using the Feeder route. ShortFuse `renodx-dlss.addon64` is a different replacement route and must not be loaded together with DLSS5-Feeder.
+Unity's motion-vector texture is normalized UV displacement, so the bridge uses `MVScale=1x1`. The current quality preset is MaxQuality at 960x540 input and 1920x1080 output. Frame generation is not enabled.
 
 ## Install
 
-Copy `PPE_DLSS.dll` to `BepInEx/plugins/` and keep the matching `nvngx_dlss.dll` beside the game executable. Press `Ctrl+D` after entering Studio. The plugin also retries while enabled if the camera was not ready when the key was pressed.
+Copy these files to `D:\Koikatsu Sunshine\BepInEx\plugins`:
 
-## Build
+- `PPE_DLSS.dll`
+- `kks_dlss_d3d12_bridge.dll`
+
+Keep the matching NVIDIA NGX runtime supplied by the game beside the executable. Enter Studio and press `Ctrl+D` to toggle DLSS. The default is off, and the plugin waits for the final Studio camera before attaching.
+
+Do not load the native plugin together with another DLSS consumer such as ShortFuse `renodx-dlss.addon64`, `dlss5-bridge.addon64`, or a second neural-rendering replacement.
+
+## Build and verification
 
 ```text
-dotnet build -c Release
+dotnet build PPE_DLSS.csproj --configuration Release
+powershell -ExecutionPolicy Bypass -File native/build_probe.ps1
+powershell -ExecutionPolicy Bypass -File tools/verify_dlss_log.ps1 -LogPath <charaStudio-log.txt>
 ```
 
-Target: `net471`, references the KKS Unity 2019.4 managed assemblies.
+The verifier accepts either the v3 native bridge markers or the archived Feeder route markers. For a native release run, require `MVScale=1x1`, successful staging, at least three successful evaluations, successful copy-back, and `usable=True` output validation.
 
-## Known limitations
+## Alternate Feeder route
 
-- The Feeder is a synthetic contract, but its final upscale is a genuine NGX SuperSampling evaluate; it is not a sharpen-only shader.
-- A successful DLL load is not proof that NGX can create a Super Resolution feature.
-- If NGX returns PlatformError or FeatureNotSupported, the switch cannot force DLSS on; the log is the source of truth.
-- The route requires third-party ReShade add-ons and NVIDIA runtime files; those binary dependencies are not redistributed in this repository.
-- Generic Depth must be manually pointed at KKS's scene depth draw/clear. A log line saying `Depth probe ... flat` means the wrong buffer was selected and temporal quality will be reduced even though the DLSS frames are delivered.
-- A log line saying `MV probe ... 0.000 px` means the motion guide is also unusable; a successful NGX frame count alone does not pass the quality gate.
-- No frame generation is enabled.
-- Do not load ShortFuse `renodx-dlss`, `dlss5-bridge`, or a second neural consumer beside the current Feeder + RenoDX DLSS5 route.
+The older ReShade + LumeniteFX + DLSS5-Feeder + RenoDX route remains documented in [DLSS5-FEEDER.md](DLSS5-FEEDER.md) for comparison and rollback. It is a separate route and must not be active while validating the native plugin.
+
+## Known limits
+
+- The native path is validated on Unity 2019.4 CharaStudio with D3D11 and the tested NVIDIA driver/runtime combination. Other drivers may require a new runtime check.
+- Depth and motion probes can be near zero in a static scene; moving the camera is required when checking temporal input.
+- No frame generation is included.
+- NVIDIA runtime binaries and third-party add-ons are not redistributed here.
+- Historical experiments and failure analysis remain in [DEBUG.md](DEBUG.md) and [DEVELOPMENT-LOG.md](DEVELOPMENT-LOG.md).

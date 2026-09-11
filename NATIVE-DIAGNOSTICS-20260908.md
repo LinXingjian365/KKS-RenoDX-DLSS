@@ -1,5 +1,11 @@
 # Native NGX investigation: 2026-09-08
 
+> **Resolved in v3.0.0 (2026-09-11):** the former feature/output failures in
+> this record were cleared by the official SDK loader path, live relay
+> resources, normalized `MVScale=1x1`, and keyed-mutex D3D11/D3D12 handoff.
+> The in-game acceptance run now reports non-zero output and 602 successful
+> evaluations. The sections below preserve the original bring-up evidence.
+
 ## Reproduction
 
 Run `native/bridge_probe.exe "D:\Koikatsu Sunshine"` after building with

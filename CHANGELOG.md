@@ -1,5 +1,15 @@
 # Changelog
 
+## v3.0.0 - 2026-09-11
+
+- Promoted the native D3D12/NGX path to the stable release after in-game validation.
+- Added live Unity color, depth, and normalized motion-vector capture at 960x540 feeding 1920x1080 MaxQuality Super Resolution.
+- Corrected normalized motion-vector scaling to `MVScale=1x1`.
+- Added keyed-mutex ownership handoff for all D3D11/D3D12 shared relays.
+- Verified repeated evaluation and output copy-back with non-zero output (`usable=True`) across 602 frames and zero private-copy failures.
+- Extended `tools/verify_dlss_log.ps1` to validate native bridge logs while retaining the archived Feeder checks.
+- Updated the installation and conflict guidance for the native route.
+
 ## v2.5.2 - 2026-09-09
 
 - Fixed D3D12 bridge teardown ordering for reliable DLSS close/reopen cycles.
