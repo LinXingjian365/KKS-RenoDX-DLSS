@@ -46,6 +46,7 @@ namespace
     struct SharedSlot
     {
         ID3D11Texture2D* relay11 = nullptr;
+        IDXGIKeyedMutex* keyedMutex = nullptr;
         HANDLE handle = nullptr;
         ID3D12Resource* imported12 = nullptr;
         D3D11_TEXTURE2D_DESC desc{};
@@ -95,6 +96,7 @@ namespace
         for (auto& slot : g_slots)
         {
             if (slot.imported12) { slot.imported12->Release(); slot.imported12 = nullptr; }
+            if (slot.keyedMutex) { slot.keyedMutex->Release(); slot.keyedMutex = nullptr; }
             if (slot.handle) { CloseHandle(slot.handle); slot.handle = nullptr; }
             if (slot.relay11) { slot.relay11->Release(); slot.relay11 = nullptr; }
             slot.desc = {};
@@ -280,7 +282,34 @@ namespace
             !g_slots[0].imported12 || !g_slots[1].imported12 || !g_slots[2].imported12 ||
             !g_slots[3].imported12 || !g_output)
             return false;
-        if (FAILED(g_allocator->Reset()) || FAILED(g_list->Reset(g_allocator, nullptr))) return false;
+        bool mutexHeld[4]{};
+        auto releaseMutexes = [&]()
+        {
+            // D3D12 returns input ownership with key 0 and output ownership
+            // with key 1. These releases happen only after the queue fence so
+            // D3D11 cannot race the GPU while staging or reading a relay.
+            for (unsigned int i = 0; i < 3; ++i)
+                if (mutexHeld[i] && g_slots[i].keyedMutex) g_slots[i].keyedMutex->ReleaseSync(0);
+            if (mutexHeld[3] && g_slots[3].keyedMutex) g_slots[3].keyedMutex->ReleaseSync(1);
+        };
+        for (unsigned int i = 0; i < 3; ++i)
+        {
+            if (!g_slots[i].keyedMutex || FAILED(g_slots[i].keyedMutex->AcquireSync(1, 5000)))
+            {
+                releaseMutexes();
+                g_stageCodes[i] = 10;
+                return false;
+            }
+            mutexHeld[i] = true;
+        }
+        if (!g_slots[3].keyedMutex || FAILED(g_slots[3].keyedMutex->AcquireSync(0, 5000)))
+        {
+            releaseMutexes();
+            g_stageCodes[3] = 10;
+            return false;
+        }
+        mutexHeld[3] = true;
+        if (FAILED(g_allocator->Reset()) || FAILED(g_list->Reset(g_allocator, nullptr))) { releaseMutexes(); return false; }
         LARGE_INTEGER tickStart{}, tickEnd{}, frequency{};
         QueryPerformanceFrequency(&frequency);
         QueryPerformanceCounter(&tickStart);
@@ -396,10 +425,19 @@ namespace
         if (fromNgxCount) g_list->ResourceBarrier(fromNgxCount, fromNgx);
 
         HRESULT closeHr = g_list->Close();
-        if (r != NVSDK_NGX_Result_Success || FAILED(closeHr)) { g_feature = r; return false; }
+        if (r != NVSDK_NGX_Result_Success || FAILED(closeHr)) { g_feature = r; releaseMutexes(); return false; }
         ID3D12CommandList* lists[] = {g_list}; g_queue->ExecuteCommandLists(1, lists);
-        if (FAILED(g_queue->Signal(g_fence, ++g_fenceValue)) || FAILED(g_fence->SetEventOnCompletion(g_fenceValue, g_fenceEvent))) return false;
+        if (FAILED(g_queue->Signal(g_fence, ++g_fenceValue)) || FAILED(g_fence->SetEventOnCompletion(g_fenceValue, g_fenceEvent))) { releaseMutexes(); return false; }
         bool completed = WaitForSingleObject(g_fenceEvent, 5000) == WAIT_OBJECT_0;
+        if (completed)
+            releaseMutexes();
+        else
+        {
+            // Do not leave a keyed mutex permanently owned after a timeout;
+            // drain the queue once more before handing it back to D3D11.
+            waitForQueueIdle();
+            releaseMutexes();
+        }
         QueryPerformanceCounter(&tickEnd);
         if (completed)
         {
@@ -421,6 +459,7 @@ namespace
         if (!same)
         {
             if (slot.imported12) { slot.imported12->Release(); slot.imported12 = nullptr; }
+            if (slot.keyedMutex) { slot.keyedMutex->Release(); slot.keyedMutex = nullptr; }
             if (slot.handle) { CloseHandle(slot.handle); slot.handle = nullptr; }
             if (slot.relay11) { slot.relay11->Release(); slot.relay11 = nullptr; }
             D3D11_TEXTURE2D_DESC relayDesc = sourceDesc;
@@ -442,12 +481,14 @@ namespace
             relayDesc.MiscFlags = D3D11_RESOURCE_MISC_SHARED_NTHANDLE | D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX;
             HRESULT createHr = g_d3d11->CreateTexture2D(&relayDesc, nullptr, &slot.relay11);
             if (FAILED(createHr)) { g_stageHresults[slotIndex] = createHr; g_stageCodes[slotIndex] = 3; return false; }
+            HRESULT mutexHr = slot.relay11->QueryInterface(IID_PPV_ARGS(&slot.keyedMutex));
+            if (FAILED(mutexHr) || !slot.keyedMutex) { g_stageHresults[slotIndex] = mutexHr; g_stageCodes[slotIndex] = 4; return false; }
             IDXGIResource1* dxgiResource = nullptr;
-            if (FAILED(slot.relay11->QueryInterface(IID_PPV_ARGS(&dxgiResource)))) { g_stageCodes[slotIndex] = 4; return false; }
+            if (FAILED(slot.relay11->QueryInterface(IID_PPV_ARGS(&dxgiResource)))) { g_stageCodes[slotIndex] = 5; return false; }
             HRESULT hr = dxgiResource->CreateSharedHandle(nullptr, GENERIC_ALL, nullptr, &slot.handle);
             dxgiResource->Release();
-            if (FAILED(hr) || !slot.handle) { g_stageCodes[slotIndex] = 5; return false; }
-            if (FAILED(g_device->OpenSharedHandle(slot.handle, IID_PPV_ARGS(&slot.imported12)))) { g_stageCodes[slotIndex] = 6; return false; }
+            if (FAILED(hr) || !slot.handle) { g_stageHresults[slotIndex] = hr; g_stageCodes[slotIndex] = 6; return false; }
+            if (FAILED(g_device->OpenSharedHandle(slot.handle, IID_PPV_ARGS(&slot.imported12)))) { g_stageCodes[slotIndex] = 7; return false; }
             slot.desc = sourceDesc;
             // Shared D3D11 allocations enter the D3D12 bridge in COMMON.
             slot.state = D3D12_RESOURCE_STATE_COMMON;
@@ -456,12 +497,24 @@ namespace
         // be overwritten with the pre-existing Unity target contents.
         if (slotIndex != 3)
         {
+            // D3D11 owns input relays while it copies the current frame. The
+            // D3D12 queue acquires key 1 after this producer releases it.
+            HRESULT acquireHr = slot.keyedMutex ? slot.keyedMutex->AcquireSync(0, 5000) : E_NOINTERFACE;
+            if (FAILED(acquireHr)) { g_stageHresults[slotIndex] = acquireHr; g_stageCodes[slotIndex] = 8; return false; }
             if (sourceDesc.SampleDesc.Count > 1)
                 g_d3d11Context->ResolveSubresource(slot.relay11, 0, source, 0, sourceDesc.Format);
             else
                 g_d3d11Context->CopyResource(slot.relay11, source);
+            g_d3d11Context->Flush();
+            HRESULT releaseHr = slot.keyedMutex->ReleaseSync(1);
+            if (FAILED(releaseHr)) { g_stageHresults[slotIndex] = releaseHr; g_stageCodes[slotIndex] = 9; return false; }
         }
-        g_d3d11Context->Flush();
+        else
+        {
+            // Slot 3 is written by D3D12 and must remain available with key 0
+            // until the first evaluation has produced an output.
+            g_d3d11Context->Flush();
+        }
         g_stageCodes[slotIndex] = 8;
         if (!g_handle && g_slots[0].imported12 && g_slots[1].imported12 && g_slots[2].imported12 && g_slots[3].imported12)
             createTestFeature();
@@ -561,8 +614,20 @@ extern "C" __declspec(dllexport) unsigned int __cdecl KKS_DLSS12_CopyOutputToD3D
     ID3D11Resource* dst = reinterpret_cast<ID3D11Resource*>(target);
     D3D11_RESOURCE_DIMENSION dim{}; dst->GetType(&dim);
     if (dim != D3D11_RESOURCE_DIMENSION_TEXTURE2D) return 0;
+    if (!g_slots[3].keyedMutex || FAILED(g_slots[3].keyedMutex->AcquireSync(1, 5000)))
+    {
+        g_stageCodes[3] = 11;
+        return 0;
+    }
     g_d3d11Context->CopyResource(dst, g_slots[3].relay11);
     g_d3d11Context->Flush();
+    HRESULT releaseHr = g_slots[3].keyedMutex->ReleaseSync(0);
+    if (FAILED(releaseHr))
+    {
+        g_stageHresults[3] = releaseHr;
+        g_stageCodes[3] = 12;
+        return 0;
+    }
     return 1;
 }
 
